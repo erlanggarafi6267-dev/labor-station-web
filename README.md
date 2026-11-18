@@ -1,18 +1,28 @@
 # LABOR_STATION
 
-**Integrated Point of Sale (POS) Management System**
+### Integrated Point of Sale (POS) Management System
 
-LABOR_STATION adalah aplikasi Point of Sale (POS) yang dirancang untuk membantu pengelolaan operasional penjualan, produk, transaksi, dan aktivitas bisnis dalam satu sistem terintegrasi.
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16.4.6-black?logo=next.js" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React-19.3.0-61DAFB?logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Laravel-13-FF2D20?logo=laravel&logoColor=white" alt="Laravel" />
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
+</p>
 
-Project ini menggunakan arsitektur monorepo yang memisahkan frontend dan backend agar pengembangan, pemeliharaan, dan pengelolaan sistem lebih terstruktur.
+LABOR_STATION is an integrated Point of Sale (POS) management system designed to support business operations, including product management, sales transactions, and operational activities through a centralized application.
+
+The project uses a **monorepo architecture**, separating the frontend and backend to improve maintainability, scalability, and development organization.
+
+---
 
 ## Project Structure
 
 ```text
 labor-station/
-├── frontend/          # Next.js application
-├── backend/           # Laravel REST API
-├── documentation/     # Project documentation
+├── frontend/           # Next.js application
+├── backend/            # Laravel REST API
+├── documentation/      # Technical documentation
 ├── .gitignore
 └── README.md
 ```
@@ -20,48 +30,82 @@ labor-station/
 ## Technology Stack
 
 ### Frontend
-- Next.js 16.4.6
-- React 19.3.0
-- TypeScript
-- Tailwind CSS 4.3.3
-- ESLint 9
+
+<p>
+  <img src="https://skillicons.dev/icons?i=nextjs,react,ts,tailwind" alt="Frontend technologies" />
+</p>
+
+| Technology | Version |
+|---|---|
+| Next.js | 16.4.6 |
+| React | 19.3.0 |
+| TypeScript | - |
+| Tailwind CSS | 4.3.3 |
+| ESLint | 9 |
 
 ### Backend
-- PHP 8.3+
-- Laravel 13
-- Laravel Sanctum 4
-- Composer
+
+<p>
+  <img src="https://skillicons.dev/icons?i=laravel,php" alt="Backend technologies" />
+</p>
+
+| Technology | Version |
+|---|---|
+| PHP | 8.3+ |
+| Laravel | 13 |
+| Laravel Sanctum | 4 |
+| Composer | Dependency Manager |
 
 ### Database
+
+<p>
+  <img src="https://skillicons.dev/icons?i=postgres" alt="PostgreSQL" />
+</p>
+
 - PostgreSQL
-- Default local port: 5433
+- Default local port: `5433`
 
-## Main Components
+---
 
-| Component | Description |
+## Main Features
+
+| Module | Description |
 |---|---|
-| Frontend | User interface and application dashboard |
-| Backend | Business logic and REST API |
-| Database | Persistent application data |
-| Documentation | Technical and project documentation |
+| Product Management | Manage product information and categories |
+| Sales Transactions | Process and manage sales transactions |
+| Sales Channels | Support Offline and GrabFood transactions |
+| Product Pricing | Manage channel-specific product prices |
+| Product Availability | Configure product availability by sales channel |
+| Preparation Options | Support Hot and Iced options for eligible drinks |
+| User Management | Manage user roles and permissions |
+| Operational Management | Support business operational activities |
 
-## Application Modules
+*Features and implementation details may evolve during development.*
 
-The system is developed to support:
+## System Architecture
 
-- Product management
-- Sales transactions
-- Offline and GrabFood sales channels
-- Channel-specific product pricing and availability
-- Hot and Iced preparation options for eligible drinks
-- User roles and permission management
-- Operational management
-
-*Module availability and implementation details may evolve during development.*
+```text
+┌──────────────────────────────┐
+│          FRONTEND            │
+│       Next.js + React        │
+└──────────────┬───────────────┘
+               │ REST API
+               ▼
+┌──────────────────────────────┐
+│           BACKEND            │
+│      Laravel 13 + Sanctum    │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│          DATABASE            │
+│          PostgreSQL          │
+└──────────────────────────────┘
+```
 
 ## Requirements
 
-Install the following tools before running the project:
+Make sure the following tools are installed:
 
 - Node.js and npm
 - PHP 8.3 or newer
@@ -75,25 +119,19 @@ Install the following tools before running the project:
 
 ```bash
 git clone https://github.com/erlanggarafi6267-dev/labor-station-web.git
+
 cd labor-station-web
 ```
 
-### 2. Setup Backend
+### 2. Backend Setup
 
 ```bash
 cd backend
+
 composer install
-```
 
-Create the local environment file:
-
-```bash
 Copy-Item .env.example .env
-```
 
-Generate the application key:
-
-```bash
 php artisan key:generate
 ```
 
@@ -108,17 +146,11 @@ DB_USERNAME=labor_station_app
 DB_PASSWORD=your_local_database_password
 ```
 
-Create the database and user in PostgreSQL before running migrations.
-
-Run database migrations:
+Create the PostgreSQL database and user before running migrations.
 
 ```bash
 php artisan migrate
-```
 
-Start the backend:
-
-```bash
 php artisan serve
 ```
 
@@ -126,18 +158,15 @@ Backend development server:
 
 `http://127.0.0.1:8000`
 
-### 3. Setup Frontend
+### 3. Frontend Setup
 
 Open another terminal from the repository root:
 
 ```bash
 cd frontend
+
 npm install
-```
 
-Start the frontend:
-
-```bash
 npm run dev
 ```
 
@@ -170,33 +199,40 @@ php artisan optimize:clear
 
 Environment files are maintained locally and must not be committed to Git.
 
-- `backend/.env` contains backend and database configuration.
-- Frontend environment variables must be configured according to the frontend application's API integration.
+- `backend/.env` — Backend and database configuration.
+- Frontend environment variables — Configure according to the frontend API integration.
+- `.env.example` — Backend environment configuration template.
 
-Use `.env.example` as the backend configuration template.
+## Documentation
 
-## Git Workflow
+Technical documentation is available in the `documentation/` directory.
 
-The repository uses a monorepo structure.
-
-- `main` — primary development branch.
-- `frontend/` — frontend application.
-- `backend/` — backend API.
-- `documentation/` — project documentation.
-
-Commit messages should describe the changes made.
+- System Architecture
+- Database Design
+- API Documentation
+- User Roles and Permissions
+- Transaction Flow
 
 ## Security
 
 - Never commit `.env` files or database credentials.
 - Do not expose application keys, API tokens, or passwords.
-- Use appropriate role and permission checks for protected operations.
+- Apply appropriate role and permission checks.
 - Validate incoming API requests.
 
 ## Project Status
 
-LABOR_STATION is under active development. Features, documentation, and system architecture may be updated as development progresses.
+**LABOR_STATION is currently under active development.**
+
+Features, documentation, and system architecture may be updated as development progresses.
 
 ---
 
-**Repository:** [LABOR_STATION](https://github.com/erlanggarafi6267-dev/labor-station-web)
+<p align="center">
+  <strong>LABOR_STATION</strong><br/>
+  Integrated Point of Sale Management System
+</p>
+
+<p align="center">
+  <a href="https://github.com/erlanggarafi6267-dev/labor-station-web">GitHub Repository</a>
+</p>
