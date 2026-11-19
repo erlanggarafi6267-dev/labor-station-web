@@ -1,0 +1,669 @@
+﻿==================================================
+AUDIT FRONTEND - API, AUTH, DAN SESSION
+==================================================
+
+  frontend\src\app\page.tsx:4:import Image from "next/image";
+  frontend\src\app\page.tsx:5:
+> frontend\src\app\page.tsx:6:const API_URL = (
+> frontend\src\app\page.tsx:7:  process.env.NEXT_PUBLIC_API_URL ||
+  frontend\src\app\page.tsx:8:  "http://127.0.0.1:8000/api"
+  frontend\src\app\page.tsx:9:).replace(/\/$/, "");
+  frontend\src\app\page.tsx:10:
+  frontend\src\app\page.tsx:22:
+  frontend\src\app\page.tsx:23:    try {
+> frontend\src\app\page.tsx:24:      const response = await fetch(`${API_URL}/login`, {
+  frontend\src\app\page.tsx:25:        method: "POST",
+  frontend\src\app\page.tsx:26:        headers: {
+  frontend\src\app\page.tsx:27:          "Content-Type": "application/json",
+  frontend\src\app\page.tsx:45:      }
+  frontend\src\app\page.tsx:46:
+> frontend\src\app\page.tsx:47:      localStorage.setItem("labor_station_token", data.token);
+> frontend\src\app\page.tsx:48:      localStorage.setItem(
+  frontend\src\app\page.tsx:49:        "labor_station_user",
+  frontend\src\app\page.tsx:50:        JSON.stringify(data.user)
+  frontend\src\app\page.tsx:51:      );
+  frontend\src\app\dashboard\page.tsx:3:    import { useCallback, useEffect, useState } from "react";
+  frontend\src\app\dashboard\page.tsx:4:
+> frontend\src\app\dashboard\page.tsx:5:    const API_URL = (
+> frontend\src\app\dashboard\page.tsx:6:    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+  frontend\src\app\dashboard\page.tsx:7:    ).replace(/\/$/, "");
+  frontend\src\app\dashboard\page.tsx:8:
+  frontend\src\app\dashboard\page.tsx:9:    type User = {
+  frontend\src\app\dashboard\page.tsx:122:
+  frontend\src\app\dashboard\page.tsx:123:    useEffect(() => {
+> frontend\src\app\dashboard\page.tsx:124:        const token = localStorage.getItem("labor_station_token");
+> frontend\src\app\dashboard\page.tsx:125:        const savedUser = localStorage.getItem("labor_station_user");
+  frontend\src\app\dashboard\page.tsx:126:
+  frontend\src\app\dashboard\page.tsx:127:        if (!token || !savedUser) {
+  frontend\src\app\dashboard\page.tsx:128:        window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:140:        setUser(parsedUser);
+  frontend\src\app\dashboard\page.tsx:141:        } catch {
+> frontend\src\app\dashboard\page.tsx:142:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\page.tsx:143:        window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:144:        }
+  frontend\src\app\dashboard\page.tsx:145:    }, []);
+  frontend\src\app\dashboard\page.tsx:146:
+  frontend\src\app\dashboard\page.tsx:147:    const fetchDashboard = useCallback(async () => {
+> frontend\src\app\dashboard\page.tsx:148:        const token = localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\page.tsx:149:
+  frontend\src\app\dashboard\page.tsx:150:        if (!token) {
+  frontend\src\app\dashboard\page.tsx:151:        window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:157:
+  frontend\src\app\dashboard\page.tsx:158:        try {
+> frontend\src\app\dashboard\page.tsx:159:        const response = await fetch(
+> frontend\src\app\dashboard\page.tsx:160:            `${API_URL}/owner/dashboard?period=${period}`,
+  frontend\src\app\dashboard\page.tsx:161:            {
+  frontend\src\app\dashboard\page.tsx:162:            method: "GET",
+  frontend\src\app\dashboard\page.tsx:163:            headers: {
+  frontend\src\app\dashboard\page.tsx:164:                Accept: "application/json",
+> frontend\src\app\dashboard\page.tsx:165:                Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\page.tsx:166:            },
+  frontend\src\app\dashboard\page.tsx:167:            cache: "no-store",
+  frontend\src\app\dashboard\page.tsx:168:            }
+  frontend\src\app\dashboard\page.tsx:170:
+  frontend\src\app\dashboard\page.tsx:171:        if (response.status === 401 || response.status === 403) {
+> frontend\src\app\dashboard\page.tsx:172:            localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\page.tsx:173:            localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\page.tsx:174:            window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:175:            return;
+  frontend\src\app\dashboard\page.tsx:176:        }
+  frontend\src\app\dashboard\page.tsx:202:    }, [user, fetchDashboard]);
+  frontend\src\app\dashboard\page.tsx:203:
+> frontend\src\app\dashboard\page.tsx:204:    async function handleLogout() {
+> frontend\src\app\dashboard\page.tsx:205:        const token = localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\page.tsx:206:
+  frontend\src\app\dashboard\page.tsx:207:        if (!token) {
+> frontend\src\app\dashboard\page.tsx:208:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\page.tsx:209:        window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:210:        return;
+  frontend\src\app\dashboard\page.tsx:211:        }
+  frontend\src\app\dashboard\page.tsx:214:
+  frontend\src\app\dashboard\page.tsx:215:        try {
+> frontend\src\app\dashboard\page.tsx:216:        await fetch(`${API_URL}/logout`, {
+  frontend\src\app\dashboard\page.tsx:217:            method: "POST",
+  frontend\src\app\dashboard\page.tsx:218:            headers: {
+  frontend\src\app\dashboard\page.tsx:219:            Accept: "application/json",
+> frontend\src\app\dashboard\page.tsx:220:            Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\page.tsx:221:            },
+  frontend\src\app\dashboard\page.tsx:222:        });
+  frontend\src\app\dashboard\page.tsx:223:        } catch {
+  frontend\src\app\dashboard\page.tsx:224:        // Tetap bersihkan sesi lokal jika koneksi terputus.
+  frontend\src\app\dashboard\page.tsx:225:        } finally {
+> frontend\src\app\dashboard\page.tsx:226:        localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\page.tsx:227:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\page.tsx:228:        window.location.replace("/");
+  frontend\src\app\dashboard\page.tsx:229:        }
+  frontend\src\app\dashboard\page.tsx:230:    }
+  frontend\src\app\dashboard\page.tsx:339:
+  frontend\src\app\dashboard\page.tsx:340:            <button
+> frontend\src\app\dashboard\page.tsx:341:                onClick={handleLogout}
+  frontend\src\app\dashboard\page.tsx:342:                disabled={loggingOut}
+  frontend\src\app\dashboard\page.tsx:343:                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-[#f2c6b8] transition hover:bg-red-500/10 disabled:opacity-50"
+  frontend\src\app\dashboard\page.tsx:344:            >
+  frontend\src\app\dashboard\activity\page.tsx:3:    import { FormEvent, useCallback, useEffect, useState } from "react";
+  frontend\src\app\dashboard\activity\page.tsx:4:
+> frontend\src\app\dashboard\activity\page.tsx:5:    const API_URL = (
+> frontend\src\app\dashboard\activity\page.tsx:6:    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+  frontend\src\app\dashboard\activity\page.tsx:7:    ).replace(/\/$/, "");
+  frontend\src\app\dashboard\activity\page.tsx:8:
+  frontend\src\app\dashboard\activity\page.tsx:9:    type User = {
+  frontend\src\app\dashboard\activity\page.tsx:87:        LOGIN_FAILED: "Login Gagal",
+  frontend\src\app\dashboard\activity\page.tsx:88:        LOGIN_BLOCKED: "Login Diblokir",
+> frontend\src\app\dashboard\activity\page.tsx:89:        LOGOUT: "Logout",
+  frontend\src\app\dashboard\activity\page.tsx:90:    };
+  frontend\src\app\dashboard\activity\page.tsx:91:
+  frontend\src\app\dashboard\activity\page.tsx:92:    return labels[action] || action.replaceAll("_", " ");
+  frontend\src\app\dashboard\activity\page.tsx:98:    }
+  frontend\src\app\dashboard\activity\page.tsx:99:
+> frontend\src\app\dashboard\activity\page.tsx:100:    if (action === "LOGOUT") {
+  frontend\src\app\dashboard\activity\page.tsx:101:        return "bg-blue-100 text-blue-800";
+  frontend\src\app\dashboard\activity\page.tsx:102:    }
+  frontend\src\app\dashboard\activity\page.tsx:103:
+  frontend\src\app\dashboard\activity\page.tsx:136:
+  frontend\src\app\dashboard\activity\page.tsx:137:    useEffect(() => {
+> frontend\src\app\dashboard\activity\page.tsx:138:        const token = localStorage.getItem("labor_station_token");
+> frontend\src\app\dashboard\activity\page.tsx:139:        const savedUser = localStorage.getItem("labor_station_user");
+  frontend\src\app\dashboard\activity\page.tsx:140:
+  frontend\src\app\dashboard\activity\page.tsx:141:        if (!token || !savedUser) {
+  frontend\src\app\dashboard\activity\page.tsx:142:        window.location.replace("/");
+  frontend\src\app\dashboard\activity\page.tsx:154:        setUser(parsed);
+  frontend\src\app\dashboard\activity\page.tsx:155:        } catch {
+> frontend\src\app\dashboard\activity\page.tsx:156:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\activity\page.tsx:157:        window.location.replace("/");
+  frontend\src\app\dashboard\activity\page.tsx:158:        }
+  frontend\src\app\dashboard\activity\page.tsx:159:    }, []);
+  frontend\src\app\dashboard\activity\page.tsx:160:
+  frontend\src\app\dashboard\activity\page.tsx:161:    const fetchLogs = useCallback(async () => {
+> frontend\src\app\dashboard\activity\page.tsx:162:        const token = localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\activity\page.tsx:163:
+  frontend\src\app\dashboard\activity\page.tsx:164:        if (!token) {
+  frontend\src\app\dashboard\activity\page.tsx:165:        window.location.replace("/");
+  frontend\src\app\dashboard\activity\page.tsx:181:        if (action) params.set("action", action);
+  frontend\src\app\dashboard\activity\page.tsx:182:
+> frontend\src\app\dashboard\activity\page.tsx:183:        const response = await fetch(
+> frontend\src\app\dashboard\activity\page.tsx:184:            `${API_URL}/owner/audit-logs?${params.toString()}`,
+  frontend\src\app\dashboard\activity\page.tsx:185:            {
+  frontend\src\app\dashboard\activity\page.tsx:186:            method: "GET",
+  frontend\src\app\dashboard\activity\page.tsx:187:            headers: {
+  frontend\src\app\dashboard\activity\page.tsx:188:                Accept: "application/json",
+> frontend\src\app\dashboard\activity\page.tsx:189:                Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\activity\page.tsx:190:            },
+  frontend\src\app\dashboard\activity\page.tsx:191:            cache: "no-store",
+  frontend\src\app\dashboard\activity\page.tsx:192:            }
+  frontend\src\app\dashboard\activity\page.tsx:194:
+  frontend\src\app\dashboard\activity\page.tsx:195:        if (response.status === 401) {
+> frontend\src\app\dashboard\activity\page.tsx:196:            localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\activity\page.tsx:197:            localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\activity\page.tsx:198:            window.location.replace("/");
+  frontend\src\app\dashboard\activity\page.tsx:199:            return;
+  frontend\src\app\dashboard\activity\page.tsx:200:        }
+  frontend\src\app\dashboard\activity\page.tsx:261:    }
+  frontend\src\app\dashboard\activity\page.tsx:262:
+> frontend\src\app\dashboard\activity\page.tsx:263:    async function handleLogout() {
+> frontend\src\app\dashboard\activity\page.tsx:264:        const token = localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\activity\page.tsx:265:
+  frontend\src\app\dashboard\activity\page.tsx:266:        setLoggingOut(true);
+  frontend\src\app\dashboard\activity\page.tsx:267:
+  frontend\src\app\dashboard\activity\page.tsx:268:        try {
+  frontend\src\app\dashboard\activity\page.tsx:269:        if (token) {
+> frontend\src\app\dashboard\activity\page.tsx:270:            await fetch(`${API_URL}/logout`, {
+  frontend\src\app\dashboard\activity\page.tsx:271:            method: "POST",
+  frontend\src\app\dashboard\activity\page.tsx:272:            headers: {
+  frontend\src\app\dashboard\activity\page.tsx:273:                Accept: "application/json",
+> frontend\src\app\dashboard\activity\page.tsx:274:                Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\activity\page.tsx:275:            },
+  frontend\src\app\dashboard\activity\page.tsx:276:            });
+  frontend\src\app\dashboard\activity\page.tsx:277:        }
+  frontend\src\app\dashboard\activity\page.tsx:279:        // Sesi lokal tetap dibersihkan jika server tidak dapat dihubungi.
+  frontend\src\app\dashboard\activity\page.tsx:280:        } finally {
+> frontend\src\app\dashboard\activity\page.tsx:281:        localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\activity\page.tsx:282:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\activity\page.tsx:283:        window.location.replace("/");
+  frontend\src\app\dashboard\activity\page.tsx:284:        }
+  frontend\src\app\dashboard\activity\page.tsx:285:    }
+  frontend\src\app\dashboard\activity\page.tsx:398:            <button
+  frontend\src\app\dashboard\activity\page.tsx:399:                type="button"
+> frontend\src\app\dashboard\activity\page.tsx:400:                onClick={handleLogout}
+  frontend\src\app\dashboard\activity\page.tsx:401:                disabled={loggingOut}
+  frontend\src\app\dashboard\activity\page.tsx:402:                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-[#f2c6b8] transition hover:bg-red-500/10 disabled:opacity-50"
+  frontend\src\app\dashboard\activity\page.tsx:403:            >
+  frontend\src\app\dashboard\activity\page.tsx:447:
+  frontend\src\app\dashboard\activity\page.tsx:448:                <p className="mt-2 text-sm text-[#92775f]">
+> frontend\src\app\dashboard\activity\page.tsx:449:                Pantau aktivitas login dan logout pengguna LABOR_STATION.
+  frontend\src\app\dashboard\activity\page.tsx:450:                </p>
+  frontend\src\app\dashboard\activity\page.tsx:451:            </section>
+  frontend\src\app\dashboard\activity\page.tsx:452:
+  frontend\src\app\dashboard\activity\page.tsx:537:                    <option value="LOGIN_FAILED">Login Gagal</option>
+  frontend\src\app\dashboard\activity\page.tsx:538:                    <option value="LOGIN_BLOCKED">Login Diblokir</option>
+> frontend\src\app\dashboard\activity\page.tsx:539:                    <option value="LOGOUT">Logout</option>
+  frontend\src\app\dashboard\activity\page.tsx:540:                    </select>
+  frontend\src\app\dashboard\activity\page.tsx:541:                </div>
+  frontend\src\app\dashboard\activity\page.tsx:542:
+  frontend\src\app\dashboard\history\page.tsx:3:import { useCallback, useEffect, useMemo, useState } from "react";
+  frontend\src\app\dashboard\history\page.tsx:4:
+> frontend\src\app\dashboard\history\page.tsx:5:const API_URL = (
+> frontend\src\app\dashboard\history\page.tsx:6:  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+  frontend\src\app\dashboard\history\page.tsx:7:).replace(/\/$/, "");
+  frontend\src\app\dashboard\history\page.tsx:8:
+  frontend\src\app\dashboard\history\page.tsx:9:type TransactionItem = {
+  frontend\src\app\dashboard\history\page.tsx:166:
+  frontend\src\app\dashboard\history\page.tsx:167:    const getHeaders = useCallback(() => {
+> frontend\src\app\dashboard\history\page.tsx:168:    const token = localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\history\page.tsx:169:
+  frontend\src\app\dashboard\history\page.tsx:170:    return {
+  frontend\src\app\dashboard\history\page.tsx:171:        Accept: "application/json",
+  frontend\src\app\dashboard\history\page.tsx:172:        "Content-Type": "application/json",
+> frontend\src\app\dashboard\history\page.tsx:173:        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  frontend\src\app\dashboard\history\page.tsx:174:    };
+  frontend\src\app\dashboard\history\page.tsx:175:  }, []);
+  frontend\src\app\dashboard\history\page.tsx:176:
+  frontend\src\app\dashboard\history\page.tsx:196:      }
+  frontend\src\app\dashboard\history\page.tsx:197:
+> frontend\src\app\dashboard\history\page.tsx:198:      const response = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:199:        `${API_URL}/transactions?${params.toString()}`,
+  frontend\src\app\dashboard\history\page.tsx:200:        {
+  frontend\src\app\dashboard\history\page.tsx:201:          method: "GET",
+  frontend\src\app\dashboard\history\page.tsx:202:          headers: getHeaders(),
+  frontend\src\app\dashboard\history\page.tsx:269:
+  frontend\src\app\dashboard\history\page.tsx:270:    try {
+> frontend\src\app\dashboard\history\page.tsx:271:      const response = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:272:        `${API_URL}/transactions/${transaction.id}`,
+  frontend\src\app\dashboard\history\page.tsx:273:        {
+  frontend\src\app\dashboard\history\page.tsx:274:          method: "GET",
+  frontend\src\app\dashboard\history\page.tsx:275:          headers: getHeaders(),
+  frontend\src\app\dashboard\history\page.tsx:315:
+  frontend\src\app\dashboard\history\page.tsx:316:    try {
+> frontend\src\app\dashboard\history\page.tsx:317:      const response = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:318:        `${API_URL}/transactions/${selectedTransaction.id}/payment`,
+  frontend\src\app\dashboard\history\page.tsx:319:        {
+  frontend\src\app\dashboard\history\page.tsx:320:          method: "POST",
+  frontend\src\app\dashboard\history\page.tsx:321:          headers: getHeaders(),
+  frontend\src\app\dashboard\history\page.tsx:340:      await fetchTransactions();
+  frontend\src\app\dashboard\history\page.tsx:341:
+> frontend\src\app\dashboard\history\page.tsx:342:      const detailResponse = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:343:        `${API_URL}/transactions/${selectedTransaction.id}`,
+  frontend\src\app\dashboard\history\page.tsx:344:        {
+  frontend\src\app\dashboard\history\page.tsx:345:          method: "GET",
+  frontend\src\app\dashboard\history\page.tsx:346:          headers: getHeaders(),
+  frontend\src\app\dashboard\history\page.tsx:389:
+  frontend\src\app\dashboard\history\page.tsx:390:  try {
+> frontend\src\app\dashboard\history\page.tsx:391:    const response = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:392:      `${API_URL}/transactions/${selectedTransaction.id}/status`,
+  frontend\src\app\dashboard\history\page.tsx:393:      {
+  frontend\src\app\dashboard\history\page.tsx:394:        method: "PATCH",
+  frontend\src\app\dashboard\history\page.tsx:395:        headers: getHeaders(),
+  frontend\src\app\dashboard\history\page.tsx:408:    await fetchTransactions();
+  frontend\src\app\dashboard\history\page.tsx:409:
+> frontend\src\app\dashboard\history\page.tsx:410:    const detailResponse = await fetch(
+> frontend\src\app\dashboard\history\page.tsx:411:      `${API_URL}/transactions/${selectedTransaction.id}`,
+  frontend\src\app\dashboard\history\page.tsx:412:      {
+  frontend\src\app\dashboard\history\page.tsx:413:        method: "GET",
+  frontend\src\app\dashboard\history\page.tsx:414:        headers: getHeaders(),
+  frontend\src\app\dashboard\inventory\page.tsx:3:import { FormEvent, useCallback, useEffect, useState } from "react";
+  frontend\src\app\dashboard\inventory\page.tsx:4:
+> frontend\src\app\dashboard\inventory\page.tsx:5:const API_URL = (
+> frontend\src\app\dashboard\inventory\page.tsx:6:  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+  frontend\src\app\dashboard\inventory\page.tsx:7:).replace(/\/$/, "");
+  frontend\src\app\dashboard\inventory\page.tsx:8:
+  frontend\src\app\dashboard\inventory\page.tsx:9:type Ingredient = {
+  frontend\src\app\dashboard\inventory\page.tsx:153:  const [userName, setUserName] = useState("Owner");
+  frontend\src\app\dashboard\inventory\page.tsx:154:
+> frontend\src\app\dashboard\inventory\page.tsx:155:  const token = () => localStorage.getItem("labor_station_token");
+  frontend\src\app\dashboard\inventory\page.tsx:156:
+  frontend\src\app\dashboard\inventory\page.tsx:157:  const [movementError, setMovementError] = useState("");
+  frontend\src\app\dashboard\inventory\page.tsx:158:
+  frontend\src\app\dashboard\inventory\page.tsx:163:  const request = useCallback(
+  frontend\src\app\dashboard\inventory\page.tsx:164:    async (path: string, options: RequestInit = {}) => {
+> frontend\src\app\dashboard\inventory\page.tsx:165:      const currentToken = localStorage.getItem(
+  frontend\src\app\dashboard\inventory\page.tsx:166:        "labor_station_token"
+  frontend\src\app\dashboard\inventory\page.tsx:167:      );
+  frontend\src\app\dashboard\inventory\page.tsx:168:
+  frontend\src\app\dashboard\inventory\page.tsx:172:      }
+  frontend\src\app\dashboard\inventory\page.tsx:173:
+> frontend\src\app\dashboard\inventory\page.tsx:174:      const response = await fetch(`${API_URL}${path}`, {
+  frontend\src\app\dashboard\inventory\page.tsx:175:        ...options,
+  frontend\src\app\dashboard\inventory\page.tsx:176:        headers: {
+  frontend\src\app\dashboard\inventory\page.tsx:177:          Accept: "application/json",
+  frontend\src\app\dashboard\inventory\page.tsx:179:            ? { "Content-Type": "application/json" }
+  frontend\src\app\dashboard\inventory\page.tsx:180:            : {}),
+> frontend\src\app\dashboard\inventory\page.tsx:181:          Authorization: `Bearer ${currentToken}`,
+  frontend\src\app\dashboard\inventory\page.tsx:182:          ...options.headers,
+  frontend\src\app\dashboard\inventory\page.tsx:183:        },
+  frontend\src\app\dashboard\inventory\page.tsx:184:        cache: "no-store",
+  frontend\src\app\dashboard\inventory\page.tsx:186:
+  frontend\src\app\dashboard\inventory\page.tsx:187:      if (response.status === 401) {
+> frontend\src\app\dashboard\inventory\page.tsx:188:        localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\inventory\page.tsx:189:        localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\inventory\page.tsx:190:
+  frontend\src\app\dashboard\inventory\page.tsx:191:        window.location.replace("/");
+  frontend\src\app\dashboard\inventory\page.tsx:192:
+  frontend\src\app\dashboard\inventory\page.tsx:278:  useEffect(() => {
+  frontend\src\app\dashboard\inventory\page.tsx:279:    const savedToken = token();
+> frontend\src\app\dashboard\inventory\page.tsx:280:    const savedUser = localStorage.getItem(
+  frontend\src\app\dashboard\inventory\page.tsx:281:      "labor_station_user"
+  frontend\src\app\dashboard\inventory\page.tsx:282:    );
+  frontend\src\app\dashboard\inventory\page.tsx:283:
+  frontend\src\app\dashboard\inventory\page.tsx:297:      setUserName(user.name || "Owner");
+  frontend\src\app\dashboard\inventory\page.tsx:298:    } catch {
+> frontend\src\app\dashboard\inventory\page.tsx:299:      localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\inventory\page.tsx:300:      window.location.replace("/");
+  frontend\src\app\dashboard\inventory\page.tsx:301:    }
+  frontend\src\app\dashboard\inventory\page.tsx:302:  }, []);
+  frontend\src\app\dashboard\inventory\page.tsx:523:
+  frontend\src\app\dashboard\inventory\page.tsx:524:  // =====================================================
+> frontend\src\app\dashboard\inventory\page.tsx:525:  // LOGOUT
+  frontend\src\app\dashboard\inventory\page.tsx:526:  // =====================================================
+  frontend\src\app\dashboard\inventory\page.tsx:527:
+> frontend\src\app\dashboard\inventory\page.tsx:528:  async function handleLogout() {
+  frontend\src\app\dashboard\inventory\page.tsx:529:    const currentToken = token();
+  frontend\src\app\dashboard\inventory\page.tsx:530:
+  frontend\src\app\dashboard\inventory\page.tsx:531:    try {
+  frontend\src\app\dashboard\inventory\page.tsx:532:      if (currentToken) {
+> frontend\src\app\dashboard\inventory\page.tsx:533:        await fetch(`${API_URL}/logout`, {
+  frontend\src\app\dashboard\inventory\page.tsx:534:          method: "POST",
+  frontend\src\app\dashboard\inventory\page.tsx:535:          headers: {
+  frontend\src\app\dashboard\inventory\page.tsx:536:            Accept: "application/json",
+> frontend\src\app\dashboard\inventory\page.tsx:537:            Authorization: `Bearer ${currentToken}`,
+  frontend\src\app\dashboard\inventory\page.tsx:538:          },
+  frontend\src\app\dashboard\inventory\page.tsx:539:        });
+  frontend\src\app\dashboard\inventory\page.tsx:540:      }
+  frontend\src\app\dashboard\inventory\page.tsx:541:    } finally {
+> frontend\src\app\dashboard\inventory\page.tsx:542:      localStorage.removeItem("labor_station_token");
+> frontend\src\app\dashboard\inventory\page.tsx:543:      localStorage.removeItem("labor_station_user");
+  frontend\src\app\dashboard\inventory\page.tsx:544:
+  frontend\src\app\dashboard\inventory\page.tsx:545:      window.location.replace("/");
+  frontend\src\app\dashboard\inventory\page.tsx:546:    }
+  frontend\src\app\dashboard\inventory\page.tsx:602:
+  frontend\src\app\dashboard\inventory\page.tsx:603:          <button
+> frontend\src\app\dashboard\inventory\page.tsx:604:            onClick={handleLogout}
+  frontend\src\app\dashboard\inventory\page.tsx:605:            className="mt-5 w-full rounded-xl px-4 py-3 text-left text-sm text-[#f2c6b8] hover:bg-red-500/10"
+  frontend\src\app\dashboard\inventory\page.tsx:606:          >
+  frontend\src\app\dashboard\inventory\page.tsx:607:            Sign Out
+  frontend\src\app\dashboard\transactions\page.tsx:5:import { jsPDF } from "jspdf";
+  frontend\src\app\dashboard\transactions\page.tsx:6:
+> frontend\src\app\dashboard\transactions\page.tsx:7:const API_URL = (
+> frontend\src\app\dashboard\transactions\page.tsx:8:  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+  frontend\src\app\dashboard\transactions\page.tsx:9:).replace(/\/$/, "");
+  frontend\src\app\dashboard\transactions\page.tsx:10:
+  frontend\src\app\dashboard\transactions\page.tsx:11:type SalesChannel = "OFFLINE" | "GRABFOOD";
+  frontend\src\app\dashboard\transactions\page.tsx:95:  const getToken = () =>
+  frontend\src\app\dashboard\transactions\page.tsx:96:    typeof window !== "undefined"
+> frontend\src\app\dashboard\transactions\page.tsx:97:      ? localStorage.getItem("labor_station_token")
+  frontend\src\app\dashboard\transactions\page.tsx:98:      : null;
+  frontend\src\app\dashboard\transactions\page.tsx:99:
+  frontend\src\app\dashboard\transactions\page.tsx:100:  const loadProducts = useCallback(async () => {
+  frontend\src\app\dashboard\transactions\page.tsx:114:
+  frontend\src\app\dashboard\transactions\page.tsx:115:    try {
+> frontend\src\app\dashboard\transactions\page.tsx:116:      const response = await fetch(
+> frontend\src\app\dashboard\transactions\page.tsx:117:        `${API_URL}/products?sales_channel=${channel}`,
+  frontend\src\app\dashboard\transactions\page.tsx:118:        {
+  frontend\src\app\dashboard\transactions\page.tsx:119:          headers: {
+  frontend\src\app\dashboard\transactions\page.tsx:120:            Accept: "application/json",
+> frontend\src\app\dashboard\transactions\page.tsx:121:            Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\transactions\page.tsx:122:          },
+  frontend\src\app\dashboard\transactions\page.tsx:123:          cache: "no-store",
+  frontend\src\app\dashboard\transactions\page.tsx:124:        }
+  frontend\src\app\dashboard\transactions\page.tsx:306:
+  frontend\src\app\dashboard\transactions\page.tsx:307:    try {
+> frontend\src\app\dashboard\transactions\page.tsx:308:      const response = await fetch(`${API_URL}/transactions`, {
+  frontend\src\app\dashboard\transactions\page.tsx:309:        method: "POST",
+  frontend\src\app\dashboard\transactions\page.tsx:310:        headers: {
+  frontend\src\app\dashboard\transactions\page.tsx:311:          Accept: "application/json",
+  frontend\src\app\dashboard\transactions\page.tsx:312:          "Content-Type": "application/json",
+> frontend\src\app\dashboard\transactions\page.tsx:313:          Authorization: `Bearer ${token}`,
+  frontend\src\app\dashboard\transactions\page.tsx:314:        },
+  frontend\src\app\dashboard\transactions\page.tsx:315:        body: JSON.stringify({
+  frontend\src\app\dashboard\transactions\page.tsx:316:          customer_name: customerName.trim() || null,
+
+
+
+
+==================================================
+AUDIT BACKEND - ROUTES, AUTH, MIDDLEWARE, PERMISSION
+==================================================
+
+  backend\app\Http\Controllers\Api\AuditLogController.php:13:     * Menampilkan riwayat aktivitas.
+> backend\app\Http\Controllers\Api\AuditLogController.php:14:     * Hanya dapat diakses oleh Owner melalui middleware.
+  backend\app\Http\Controllers\Api\AuditLogController.php:15:     */
+  backend\app\Http\Controllers\Api\AuditLogController.php:16:    public function index(Request $request)
+  backend\app\Http\Controllers\Api\AuthController.php:11:use Illuminate\Validation\ValidationException;
+> backend\app\Http\Controllers\Api\AuthController.php:12:use Laravel\Sanctum\PersonalAccessToken;
+  backend\app\Http\Controllers\Api\AuthController.php:13:
+  backend\app\Http\Controllers\Api\AuthController.php:14:class AuthController extends Controller
+  backend\app\Http\Controllers\Api\AuthController.php:89:        // LOGIN MENGGUNAKAN SESSION WEB
+> backend\app\Http\Controllers\Api\AuthController.php:90:        Auth::guard('web')->login($user);
+  backend\app\Http\Controllers\Api\AuthController.php:91:
+  backend\app\Http\Controllers\Api\AuthController.php:92:        // Regenerasi session untuk mencegah session fixation.
+  backend\app\Http\Controllers\Api\AuthController.php:139:        // Jika menggunakan Personal Access Token, hapus token aktif.
+> backend\app\Http\Controllers\Api\AuthController.php:140:        if ($currentToken instanceof PersonalAccessToken) {
+  backend\app\Http\Controllers\Api\AuthController.php:141:            $currentToken->delete();
+  backend\app\Http\Controllers\Api\AuthController.php:142:        } else {
+  backend\app\Http\Controllers\Api\AuthController.php:143:            // Jika menggunakan session SPA, akhiri session.
+> backend\app\Http\Controllers\Api\AuthController.php:144:            Auth::guard('web')->logout();
+  backend\app\Http\Controllers\Api\AuthController.php:145:
+  backend\app\Http\Controllers\Api\AuthController.php:146:            $request->session()->invalidate();
+  backend\app\Http\Controllers\Api\ProductManagementController.php:277:        foreach (array_unique($permissionChecks) as $permission) {
+> backend\app\Http\Controllers\Api\ProductManagementController.php:278:            if (!$request->user()->hasPermission($permission)) {
+  backend\app\Http\Controllers\Api\ProductManagementController.php:279:                return response()->json([
+  backend\app\Http\Controllers\Api\ProductManagementController.php:280:                    'message' => 'Kamu tidak memiliki izin untuk melakukan perubahan ini.',
+  backend\app\Http\Controllers\Api\UserPermissionController.php:96:
+> backend\app\Http\Controllers\Api\UserPermissionController.php:97:        $permissionIds = Permission::query()
+  backend\app\Http\Controllers\Api\UserPermissionController.php:98:            ->whereIn('slug', $validated['permissions'])
+  backend\app\Http\Controllers\Api\UserPermissionController.php:99:            ->pluck('id')
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:2:
+> backend\app\Http\Middleware\EnsureUserHasPermission.php:3:namespace App\Http\Middleware;
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:4:
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:5:use Closure;
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:8:
+> backend\app\Http\Middleware\EnsureUserHasPermission.php:9:class EnsureUserHasPermission
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:10:{
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:11:    public function handle(
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:23:
+> backend\app\Http\Middleware\EnsureUserHasPermission.php:24:        if (!$user->hasPermission($permission)) {
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:25:            return response()->json([
+  backend\app\Http\Middleware\EnsureUserHasPermission.php:26:                'message' => 'Kamu tidak memiliki izin untuk melakukan tindakan ini.',
+  backend\app\Http\Middleware\EnsureUserHasRole.php:2:
+> backend\app\Http\Middleware\EnsureUserHasRole.php:3:namespace App\Http\Middleware;
+  backend\app\Http\Middleware\EnsureUserHasRole.php:4:
+  backend\app\Http\Middleware\EnsureUserHasRole.php:5:use Closure;
+  backend\app\Models\User.php:5:use Database\Factories\UserFactory;
+> backend\app\Models\User.php:6:use Laravel\Sanctum\HasApiTokens;
+  backend\app\Models\User.php:7:use Illuminate\Database\Eloquent\Attributes\Fillable;
+  backend\app\Models\User.php:8:use Illuminate\Database\Eloquent\Attributes\Hidden;
+  backend\app\Models\User.php:32:        return $this->belongsToMany(
+> backend\app\Models\User.php:33:            Permission::class,
+  backend\app\Models\User.php:34:            'user_permissions'
+  backend\app\Models\User.php:35:        )->withPivot('granted_by')->withTimestamps();
+  backend\app\Models\User.php:37:
+> backend\app\Models\User.php:38:    public function hasPermission(string $permission): bool
+  backend\app\Models\User.php:39:    {
+  backend\app\Models\User.php:40:        if ($this->role?->slug === 'owner') {
+  backend\bootstrap\app.php:4:use Illuminate\Foundation\Configuration\Exceptions;
+> backend\bootstrap\app.php:5:use Illuminate\Foundation\Configuration\Middleware;
+  backend\bootstrap\app.php:6:use Illuminate\Http\Request;
+  backend\bootstrap\app.php:7:
+  backend\bootstrap\app.php:14:    )
+> backend\bootstrap\app.php:15:    ->withMiddleware(function (Middleware $middleware): void {
+  backend\bootstrap\app.php:16:
+> backend\bootstrap\app.php:17:        // Aktifkan autentikasi SPA menggunakan Sanctum.
+> backend\bootstrap\app.php:18:        $middleware->statefulApi();
+  backend\bootstrap\app.php:19:
+> backend\bootstrap\app.php:20:        // Middleware alias untuk role dan permission.
+> backend\bootstrap\app.php:21:        $middleware->alias([
+> backend\bootstrap\app.php:22:            'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+> backend\bootstrap\app.php:23:            'permission' => \App\Http\Middleware\EnsureUserHasPermission::class,
+  backend\bootstrap\app.php:24:        ]);
+  backend\bootstrap\app.php:25:
+  backend\bootstrap\app.php:26:        // API tidak diarahkan ke halaman login web.
+> backend\bootstrap\app.php:27:        $middleware->redirectGuestsTo(function (Request $request) {
+  backend\bootstrap\app.php:28:            return null;
+  backend\bootstrap\app.php:29:        });
+  backend\config\cors.php:6:        'api/*',
+> backend\config\cors.php:7:        'sanctum/csrf-cookie',
+  backend\config\cors.php:8:    ],
+  backend\config\cors.php:9:
+  backend\config\sanctum.php:2:
+> backend\config\sanctum.php:3:use Illuminate\Cookie\Middleware\EncryptCookies;
+> backend\config\sanctum.php:4:use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+> backend\config\sanctum.php:5:use Laravel\Sanctum\Http\Middleware\AuthenticateSession;
+> backend\config\sanctum.php:6:use Laravel\Sanctum\Sanctum;
+  backend\config\sanctum.php:7:
+  backend\config\sanctum.php:8:return [
+  backend\config\sanctum.php:20:
+> backend\config\sanctum.php:21:    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
+  backend\config\sanctum.php:22:        '%s%s',
+  backend\config\sanctum.php:23:        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
+> backend\config\sanctum.php:24:        Sanctum::currentApplicationUrlWithPort(),
+> backend\config\sanctum.php:25:        // Sanctum::currentRequestHost(),
+  backend\config\sanctum.php:26:    ))),
+  backend\config\sanctum.php:27:
+  backend\config\sanctum.php:29:    |--------------------------------------------------------------------------
+> backend\config\sanctum.php:30:    | Sanctum Guards
+  backend\config\sanctum.php:31:    |--------------------------------------------------------------------------
+  backend\config\sanctum.php:32:    |
+  backend\config\sanctum.php:33:    | This array contains the authentication guards that will be checked when
+> backend\config\sanctum.php:34:    | Sanctum is trying to authenticate a request. If none of these guards
+> backend\config\sanctum.php:35:    | are able to authenticate the request, Sanctum will use the bearer
+  backend\config\sanctum.php:36:    | token that's present on an incoming request for authentication.
+  backend\config\sanctum.php:37:    |
+  backend\config\sanctum.php:59:    |
+> backend\config\sanctum.php:60:    | Sanctum can prefix new tokens in order to take advantage of numerous
+  backend\config\sanctum.php:61:    | security scanning initiatives maintained by open source platforms
+  backend\config\sanctum.php:62:    | that notify developers if they commit tokens into repositories.
+  backend\config\sanctum.php:67:
+> backend\config\sanctum.php:68:    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
+  backend\config\sanctum.php:69:
+  backend\config\sanctum.php:70:    /*
+  backend\config\sanctum.php:71:    |--------------------------------------------------------------------------
+> backend\config\sanctum.php:72:    | Sanctum Middleware
+  backend\config\sanctum.php:73:    |--------------------------------------------------------------------------
+  backend\config\sanctum.php:74:    |
+> backend\config\sanctum.php:75:    | When authenticating your first-party SPA with Sanctum you may need to
+> backend\config\sanctum.php:76:    | customize some of the middleware Sanctum uses while processing the
+> backend\config\sanctum.php:77:    | request. You may change the middleware listed below as required.
+  backend\config\sanctum.php:78:    |
+  backend\config\sanctum.php:79:    */
+  backend\config\sanctum.php:80:
+> backend\config\sanctum.php:81:    'middleware' => [
+  backend\config\sanctum.php:82:        'authenticate_session' => AuthenticateSession::class,
+  backend\config\sanctum.php:83:        'encrypt_cookies' => EncryptCookies::class,
+  backend\database\seeders\PermissionSeeder.php:40:        foreach ($permissions as $permission) {
+> backend\database\seeders\PermissionSeeder.php:41:            Permission::updateOrCreate(
+  backend\database\seeders\PermissionSeeder.php:42:                ['slug' => $permission['slug']],
+  backend\database\seeders\PermissionSeeder.php:43:                ['name' => $permission['name']]
+  backend\resources\views\welcome.blade.php:21:        <header class="w-full lg:max-w-4xl max-w-[335px] text-sm mb-6 not-has-[nav]:hidden">
+> backend\resources\views\welcome.blade.php:22:            @if (Route::has('login'))
+  backend\resources\views\welcome.blade.php:23:                <nav class="flex items-center justify-end gap-4">
+  backend\resources\views\welcome.blade.php:24:                    @auth
+  backend\resources\views\welcome.blade.php:38:
+> backend\resources\views\welcome.blade.php:39:                        @if (Route::has('register'))
+  backend\resources\views\welcome.blade.php:40:                            <a
+  backend\resources\views\welcome.blade.php:41:                                href="{{ route('register') }}"
+  backend\resources\views\welcome.blade.php:218:
+> backend\resources\views\welcome.blade.php:219:        @if (Route::has('login'))
+  backend\resources\views\welcome.blade.php:220:            <div class="h-14.5 hidden lg:block"></div>
+  backend\resources\views\welcome.blade.php:221:        @endif
+  backend\routes\api.php:24:
+> backend\routes\api.php:25:Route::post('/login', [AuthController::class, 'login'])
+> backend\routes\api.php:26:    ->middleware('throttle:5,1');
+  backend\routes\api.php:27:
+  backend\routes\api.php:28:
+  backend\routes\api.php:34:
+> backend\routes\api.php:35:Route::middleware('auth:sanctum')->group(function () {
+  backend\routes\api.php:36:
+  backend\routes\api.php:37:    /*
+  backend\routes\api.php:42:
+> backend\routes\api.php:43:    Route::prefix('inventory')->group(function () {
+  backend\routes\api.php:44:
+> backend\routes\api.php:45:        Route::get('/', [InventoryController::class, 'index'])
+> backend\routes\api.php:46:            ->middleware('permission:inventory.view');
+  backend\routes\api.php:47:
+> backend\routes\api.php:48:        Route::post('/', [InventoryController::class, 'store'])
+> backend\routes\api.php:49:            ->middleware('permission:inventory.manage');
+  backend\routes\api.php:50:
+> backend\routes\api.php:51:        Route::put('/{id}', [InventoryController::class, 'update'])
+> backend\routes\api.php:52:            ->middleware('permission:inventory.manage');
+  backend\routes\api.php:53:
+> backend\routes\api.php:54:        Route::delete('/{id}', [InventoryController::class, 'destroy'])
+> backend\routes\api.php:55:            ->middleware('permission:inventory.manage');
+  backend\routes\api.php:56:
+> backend\routes\api.php:57:        Route::post('/{id}/movements', [InventoryController::class, 'move'])
+> backend\routes\api.php:58:            ->middleware('permission:inventory.stock.manage');
+  backend\routes\api.php:59:
+> backend\routes\api.php:60:        Route::get('/movements', [InventoryController::class, 'movements'])
+> backend\routes\api.php:61:            ->middleware('permission:inventory.view');
+  backend\routes\api.php:62:    });
+  backend\routes\api.php:63:
+  backend\routes\api.php:70:
+> backend\routes\api.php:71:    Route::post('/logout', [AuthController::class, 'logout']);
+  backend\routes\api.php:72:
+> backend\routes\api.php:73:    Route::get('/me', [AuthController::class, 'me']);
+  backend\routes\api.php:74:
+  backend\routes\api.php:75:
+  backend\routes\api.php:81:
+> backend\routes\api.php:82:    Route::get('/products', [ProductCatalogController::class, 'index'])
+> backend\routes\api.php:83:        ->middleware('permission:product.view');
+  backend\routes\api.php:84:
+  backend\routes\api.php:85:
+  backend\routes\api.php:91:
+> backend\routes\api.php:92:    Route::prefix('owner/products')->group(function () {
+  backend\routes\api.php:93:
+> backend\routes\api.php:94:        Route::get('/', [ProductManagementController::class, 'index'])
+> backend\routes\api.php:95:            ->middleware('permission:product.view');
+  backend\routes\api.php:96:
+> backend\routes\api.php:97:        Route::post('/', [ProductManagementController::class, 'store'])
+> backend\routes\api.php:98:            ->middleware('permission:product.create');
+  backend\routes\api.php:99:
+> backend\routes\api.php:100:        Route::get('/{id}', [ProductManagementController::class, 'show'])
+> backend\routes\api.php:101:            ->middleware('permission:product.view');
+  backend\routes\api.php:102:
+> backend\routes\api.php:103:        Route::put('/{id}', [ProductManagementController::class, 'update'])
+> backend\routes\api.php:104:            ->middleware('permission:product.update');
+  backend\routes\api.php:105:
+> backend\routes\api.php:106:        Route::delete('/{id}', [ProductManagementController::class, 'destroy'])
+> backend\routes\api.php:107:            ->middleware('permission:product.delete');
+  backend\routes\api.php:108:    });
+  backend\routes\api.php:109:
+  backend\routes\api.php:116:
+> backend\routes\api.php:117:    Route::prefix('owner/categories')
+> backend\routes\api.php:118:        ->middleware('permission:category.manage')
+  backend\routes\api.php:119:        ->group(function () {
+  backend\routes\api.php:120:
+> backend\routes\api.php:121:            Route::get('/', [CategoryController::class, 'index']);
+  backend\routes\api.php:122:
+> backend\routes\api.php:123:            Route::post('/', [CategoryController::class, 'store']);
+  backend\routes\api.php:124:
+> backend\routes\api.php:125:            Route::get('/{id}', [CategoryController::class, 'show']);
+  backend\routes\api.php:126:
+> backend\routes\api.php:127:            Route::put('/{id}', [CategoryController::class, 'update']);
+  backend\routes\api.php:128:
+> backend\routes\api.php:129:            Route::delete('/{id}', [CategoryController::class, 'destroy']);
+  backend\routes\api.php:130:        });
+  backend\routes\api.php:131:
+  backend\routes\api.php:138:
+> backend\routes\api.php:139:    Route::get('/transactions', [TransactionController::class, 'index'])
+> backend\routes\api.php:140:        ->middleware('permission:transaction.view');
+  backend\routes\api.php:141:
+> backend\routes\api.php:142:    Route::post('/transactions', [TransactionController::class, 'store'])
+> backend\routes\api.php:143:        ->middleware('permission:transaction.create');
+  backend\routes\api.php:144:
+> backend\routes\api.php:145:    Route::get('/transactions/{id}', [TransactionController::class, 'show'])
+> backend\routes\api.php:146:        ->middleware('permission:transaction.view');
+  backend\routes\api.php:147:
+> backend\routes\api.php:148:    Route::post('/transactions/{id}/payment', [PaymentController::class, 'store'])
+> backend\routes\api.php:149:        ->middleware('permission:transaction.payment');
+  backend\routes\api.php:150:
+  backend\routes\api.php:151:    // Update status pesanan
+> backend\routes\api.php:152:    Route::patch('/transactions/{id}/status', [OrderStatusController::class, 'update'])
+> backend\routes\api.php:153:        ->middleware('permission:transaction.status.update');
+  backend\routes\api.php:154:
+  backend\routes\api.php:155:    // GrabFood payout khusus Owner
+> backend\routes\api.php:156:    Route::post('/transactions/{id}/payout', [GrabFoodPayoutController::class, 'store'])
+> backend\routes\api.php:157:        ->middleware('role:owner');
+  backend\routes\api.php:158:
+  backend\routes\api.php:159:
+  backend\routes\api.php:165:
+> backend\routes\api.php:166:    Route::get('/expenses', [ExpenseController::class, 'index'])
+> backend\routes\api.php:167:        ->middleware('permission:expense.view');
+  backend\routes\api.php:168:
+> backend\routes\api.php:169:    Route::post('/expenses', [ExpenseController::class, 'store'])
+> backend\routes\api.php:170:        ->middleware('permission:expense.create');
+  backend\routes\api.php:171:
+> backend\routes\api.php:172:    Route::get('/expenses/{id}', [ExpenseController::class, 'show'])
+> backend\routes\api.php:173:        ->middleware('permission:expense.view');
+  backend\routes\api.php:174:
+> backend\routes\api.php:175:    Route::put('/expenses/{id}', [ExpenseController::class, 'update'])
+> backend\routes\api.php:176:        ->middleware('permission:expense.update');
+  backend\routes\api.php:177:
+> backend\routes\api.php:178:    Route::delete('/expenses/{id}', [ExpenseController::class, 'destroy'])
+> backend\routes\api.php:179:        ->middleware('permission:expense.delete');
+  backend\routes\api.php:180:
+  backend\routes\api.php:181:
+  backend\routes\api.php:187:
+> backend\routes\api.php:188:    Route::middleware('role:owner')->group(function () {
+  backend\routes\api.php:189:
+  backend\routes\api.php:190:        // Owner dashboard
+> backend\routes\api.php:191:        Route::get('/owner/dashboard', [OwnerDashboardController::class, 'index']);
+  backend\routes\api.php:192:
+  backend\routes\api.php:193:        // Audit logs
+> backend\routes\api.php:194:        Route::get('/owner/audit-logs', [AuditLogController::class, 'index']);
+  backend\routes\api.php:195:
+> backend\routes\api.php:196:        Route::get('/owner/audit-logs/{id}', [AuditLogController::class, 'show']);
+  backend\routes\api.php:197:
+  backend\routes\api.php:198:        // User permissions
+> backend\routes\api.php:199:        Route::get('/owner/users', [UserPermissionController::class, 'index']);
+  backend\routes\api.php:200:
+> backend\routes\api.php:201:        Route::get(
+  backend\routes\api.php:202:            '/owner/users/{userId}/permissions',
+  backend\routes\api.php:203:            [UserPermissionController::class, 'show']
+  backend\routes\api.php:205:
+> backend\routes\api.php:206:        Route::put(
+  backend\routes\api.php:207:            '/owner/users/{userId}/permissions',
+  backend\routes\api.php:208:            [UserPermissionController::class, 'update']
+  backend\routes\web.php:4:
+> backend\routes\web.php:5:Route::get('/', function () {
+  backend\routes\web.php:6:    return view('welcome');
+  backend\routes\web.php:7:});
+
+
+

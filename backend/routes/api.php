@@ -16,7 +16,6 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\UserPermissionController;
 use App\Http\Controllers\Api\InventoryController;
 
-
 /*
 |--------------------------------------------------------------------------
 | LOGIN
@@ -35,13 +34,14 @@ Route::post('/login', [AuthController::class, 'login'])
 
 Route::middleware('auth:sanctum')->group(function () {
 
-        /*
+    /*
     |--------------------------------------------------------------------------
     | INVENTORY MANAGEMENT
     |--------------------------------------------------------------------------
     */
 
     Route::prefix('inventory')->group(function () {
+
         Route::get('/', [InventoryController::class, 'index'])
             ->middleware('permission:inventory.view');
 
@@ -61,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('permission:inventory.view');
     });
 
+
     /*
     |--------------------------------------------------------------------------
     | AUTHENTICATION
@@ -68,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
 
     Route::post('/logout', [AuthController::class, 'logout']);
+
     Route::get('/me', [AuthController::class, 'me']);
 
 
@@ -98,7 +100,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ProductManagementController::class, 'show'])
             ->middleware('permission:product.view');
 
-        Route::put('/{id}', [ProductManagementController::class, 'update']);
+        Route::put('/{id}', [ProductManagementController::class, 'update'])
+            ->middleware('permission:product.update');
 
         Route::delete('/{id}', [ProductManagementController::class, 'destroy'])
             ->middleware('permission:product.delete');
@@ -116,9 +119,13 @@ Route::middleware('auth:sanctum')->group(function () {
         ->group(function () {
 
             Route::get('/', [CategoryController::class, 'index']);
+
             Route::post('/', [CategoryController::class, 'store']);
+
             Route::get('/{id}', [CategoryController::class, 'show']);
+
             Route::put('/{id}', [CategoryController::class, 'update']);
+
             Route::delete('/{id}', [CategoryController::class, 'destroy']);
         });
 
@@ -185,6 +192,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Audit logs
         Route::get('/owner/audit-logs', [AuditLogController::class, 'index']);
+
         Route::get('/owner/audit-logs/{id}', [AuditLogController::class, 'show']);
 
         // User permissions
@@ -200,4 +208,5 @@ Route::middleware('auth:sanctum')->group(function () {
             [UserPermissionController::class, 'update']
         );
     });
+
 });

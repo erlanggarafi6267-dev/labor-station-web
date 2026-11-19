@@ -106,7 +106,9 @@ function getErrorMessage(
 export default function InventoryPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+
   const [ingredientModalOpen, setIngredientModalOpen] = useState(false);
+
   const [summary, setSummary] = useState<Summary>({
     total: 0,
     low_stock: 0,
@@ -121,25 +123,30 @@ export default function InventoryPage() {
     useState<MovementForm>(emptyMovementForm);
 
   const [editingId, setEditingId] = useState<number | null>(null);
+
   const [selectedIngredient, setSelectedIngredient] =
     useState<Ingredient | null>(null);
 
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
-  const [activeTab, setActiveTab] = useState<"ingredients" | "movements">(
-    "ingredients"
-  );
+
+  const [activeTab, setActiveTab] = useState<
+    "ingredients" | "movements"
+  >("ingredients");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const [ingredientPage, setIngredientPage] = useState(1);
   const [movementPage, setMovementPage] = useState(1);
+
   const [ingredientPagination, setIngredientPagination] =
     useState<Paginated<Ingredient> | null>(null);
+
   const [movementPagination, setMovementPagination] =
     useState<Paginated<Movement> | null>(null);
 
@@ -149,45 +156,62 @@ export default function InventoryPage() {
 
   const [movementError, setMovementError] = useState("");
 
-  const request = useCallback(async (
-    path: string,
-    options: RequestInit = {}
-  ) => {
-    const currentToken = localStorage.getItem("labor_station_token");
+  // =====================================================
+  // API REQUEST
+  // =====================================================
 
-    if (!currentToken) {
-      window.location.replace("/");
-      throw new Error("Sesi login tidak ditemukan.");
-    }
-
-    const response = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers: {
-        Accept: "application/json",
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        Authorization: `Bearer ${currentToken}`,
-        ...options.headers,
-      },
-      cache: "no-store",
-    });
-
-    if (response.status === 401) {
-      localStorage.removeItem("labor_station_token");
-      localStorage.removeItem("labor_station_user");
-      window.location.replace("/");
-      throw new Error("Sesi login telah berakhir.");
-    }
-
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(
-        getErrorMessage(result, "Permintaan ke server gagal.")
+  const request = useCallback(
+    async (path: string, options: RequestInit = {}) => {
+      const currentToken = localStorage.getItem(
+        "labor_station_token"
       );
-    }
 
-    return result;
-  }, []);
+      if (!currentToken) {
+        window.location.replace("/");
+        throw new Error("Sesi login tidak ditemukan.");
+      }
+
+      const response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          ...(options.body
+            ? { "Content-Type": "application/json" }
+            : {}),
+          Authorization: `Bearer ${currentToken}`,
+          ...options.headers,
+        },
+        cache: "no-store",
+      });
+
+      if (response.status === 401) {
+        localStorage.removeItem("labor_station_token");
+        localStorage.removeItem("labor_station_user");
+
+        window.location.replace("/");
+
+        throw new Error("Sesi login telah berakhir.");
+      }
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(
+            result,
+            "Permintaan ke server gagal."
+          )
+        );
+      }
+
+      return result;
+    },
+    []
+  );
+
+  // =====================================================
+  // FETCH DATA INVENTARIS
+  // =====================================================
 
   const fetchIngredients = useCallback(async () => {
     const params = new URLSearchParams({
@@ -198,7 +222,9 @@ export default function InventoryPage() {
       page: String(ingredientPage),
     });
 
-    const result = await request(`/inventory?${params.toString()}`);
+    const result = await request(
+      `/inventory?${params.toString()}`
+    );
 
     setIngredients(result.data.data);
     setIngredientPagination(result.data);
@@ -245,9 +271,15 @@ export default function InventoryPage() {
     }
   }, [fetchIngredients, fetchMovements]);
 
+  // =====================================================
+  // AUTHENTICATION
+  // =====================================================
+
   useEffect(() => {
     const savedToken = token();
-    const savedUser = localStorage.getItem("labor_station_user");
+    const savedUser = localStorage.getItem(
+      "labor_station_user"
+    );
 
     if (!savedToken || !savedUser) {
       window.location.replace("/");
@@ -275,34 +307,43 @@ export default function InventoryPage() {
     }
   }, [refreshData]);
 
-function resetIngredientForm() {
+  // =====================================================
+  // FORM BAHAN BAKU
+  // =====================================================
+
+  function resetIngredientForm() {
     setIngredientForm(emptyIngredientForm);
     setEditingId(null);
     setIngredientModalOpen(false);
-}
+  }
 
-function openCreateIngredient() {
+  function openCreateIngredient() {
     setIngredientForm(emptyIngredientForm);
     setEditingId(null);
     setIngredientModalOpen(true);
+
     setError("");
     setSuccess("");
-}
+  }
 
   function openEditIngredient(ingredient: Ingredient) {
     setEditingId(ingredient.id);
     setIngredientModalOpen(true);
+
     setIngredientForm({
       name: ingredient.name,
       unit: ingredient.unit,
       current_stock: String(ingredient.current_stock),
       minimum_stock: String(ingredient.minimum_stock),
     });
+
     setError("");
     setSuccess("");
   }
 
-  async function saveIngredient(event: FormEvent<HTMLFormElement>) {
+  async function saveIngredient(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     setSaving(true);
@@ -313,13 +354,21 @@ function openCreateIngredient() {
       const payload = {
         name: ingredientForm.name.trim(),
         unit: ingredientForm.unit.trim(),
-        minimum_stock: Number(ingredientForm.minimum_stock),
+        minimum_stock: Number(
+          ingredientForm.minimum_stock
+        ),
+
         ...(editingId === null
-          ? { current_stock: Number(ingredientForm.current_stock) }
+          ? {
+              current_stock: Number(
+                ingredientForm.current_stock
+              ),
+            }
           : {
               is_active:
-                ingredients.find((item) => item.id === editingId)
-                  ?.is_active ?? true,
+                ingredients.find(
+                  (item) => item.id === editingId
+                )?.is_active ?? true,
             }),
       };
 
@@ -340,6 +389,7 @@ function openCreateIngredient() {
       );
 
       resetIngredientForm();
+
       await refreshData();
     } catch (err) {
       setError(
@@ -352,7 +402,13 @@ function openCreateIngredient() {
     }
   }
 
-  async function deactivateIngredient(ingredient: Ingredient) {
+  // =====================================================
+  // NONAKTIFKAN BAHAN
+  // =====================================================
+
+  async function deactivateIngredient(
+    ingredient: Ingredient
+  ) {
     const confirmed = window.confirm(
       `Nonaktifkan bahan "${ingredient.name}"? Riwayat stok tetap disimpan.`
     );
@@ -368,6 +424,7 @@ function openCreateIngredient() {
       });
 
       setSuccess("Bahan baku berhasil dinonaktifkan.");
+
       await refreshData();
     } catch (err) {
       setError(
@@ -378,16 +435,22 @@ function openCreateIngredient() {
     }
   }
 
-function openMovement(ingredient: Ingredient) {
+  // =====================================================
+  // PERGERAKAN STOK
+  // =====================================================
+
+  function openMovement(ingredient: Ingredient) {
     setSelectedIngredient(ingredient);
     setMovementForm(emptyMovementForm);
 
     setError("");
     setMovementError("");
     setSuccess("");
-}
+  }
 
-async function saveMovement(event: FormEvent<HTMLFormElement>) {
+  async function saveMovement(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     if (!selectedIngredient) return;
@@ -398,39 +461,41 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
     setSuccess("");
 
     try {
-        await request(
-            `/inventory/${selectedIngredient.id}/movements`,
-            {
-                method: "POST",
-                body: JSON.stringify({
-                    type: movementForm.type,
-                    quantity: Number(movementForm.quantity),
-                    reason: movementForm.reason.trim(),
-                }),
-            }
-        );
+      await request(
+        `/inventory/${selectedIngredient.id}/movements`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            type: movementForm.type,
+            quantity: Number(movementForm.quantity),
+            reason: movementForm.reason.trim(),
+          }),
+        }
+      );
 
-        setSuccess("Pergerakan stok berhasil dicatat.");
+      setSuccess("Pergerakan stok berhasil dicatat.");
 
-        setSelectedIngredient(null);
-        setMovementForm(emptyMovementForm);
+      setSelectedIngredient(null);
+      setMovementForm(emptyMovementForm);
 
-        setActiveTab("movements");
-        setMovementPage(1);
+      setActiveTab("movements");
+      setMovementPage(1);
 
-        await refreshData();
-
+      await refreshData();
     } catch (err) {
-        setMovementError(
-            err instanceof Error
-                ? err.message
-                : "Gagal mencatat pergerakan stok."
-        );
-
+      setMovementError(
+        err instanceof Error
+          ? err.message
+          : "Gagal mencatat pergerakan stok."
+      );
     } finally {
-        setSaving(false);
+      setSaving(false);
     }
-}
+  }
+
+  // =====================================================
+  // STATUS STOK
+  // =====================================================
 
   function getStockStatus(ingredient: Ingredient) {
     const current = Number(ingredient.current_stock);
@@ -456,6 +521,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
     };
   }
 
+  // =====================================================
+  // LOGOUT
+  // =====================================================
+
   async function handleLogout() {
     const currentToken = token();
 
@@ -472,17 +541,26 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
     } finally {
       localStorage.removeItem("labor_station_token");
       localStorage.removeItem("labor_station_user");
+
       window.location.replace("/");
     }
   }
 
+  // =====================================================
+  // RENDER
+  // =====================================================
+
   return (
     <main className="min-h-screen bg-[#f5eee6] text-[#392619]">
+
+      {/* SIDEBAR */}
+
       <aside className="fixed inset-y-0 left-0 hidden w-[250px] flex-col bg-[#302016] text-[#fff5e9] lg:flex">
         <div className="border-b border-white/10 px-6 py-7">
           <h1 className="text-lg font-black tracking-wide">
             LABOR_STATION
           </h1>
+
           <p className="mt-1 text-[10px] tracking-[0.2em] text-[#d8bfa5]">
             MANAGEMENT SYSTEM
           </p>
@@ -514,8 +592,13 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
         </nav>
 
         <div className="mt-auto border-t border-white/10 p-5">
-          <p className="truncate text-sm font-bold">{userName}</p>
-          <p className="mt-1 text-xs text-[#d8bfa5]">Owner Account</p>
+          <p className="truncate text-sm font-bold">
+            {userName}
+          </p>
+
+          <p className="mt-1 text-xs text-[#d8bfa5]">
+            Owner Account
+          </p>
 
           <button
             onClick={handleLogout}
@@ -526,13 +609,21 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
         </div>
       </aside>
 
+      {/* KONTEN UTAMA */}
+
       <div className="lg:ml-[250px]">
+
+        {/* HEADER */}
+
         <header className="flex h-[76px] items-center justify-between border-b border-[#e8d9ca] bg-[#fffaf4] px-5 sm:px-8">
           <div>
             <p className="text-xs text-[#92775f]">
               Workspace / Management
             </p>
-            <h2 className="mt-1 font-extrabold">Inventaris Bahan Baku</h2>
+
+            <h2 className="mt-1 font-extrabold">
+              Inventaris Bahan Baku
+            </h2>
           </div>
 
           <button
@@ -545,14 +636,19 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
         </header>
 
         <div className="mx-auto max-w-[1450px] space-y-7 p-4 sm:p-7 lg:p-9">
+
+          {/* JUDUL HALAMAN */}
+
           <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#9b795b]">
                 Stock Control
               </p>
+
               <h1 className="mt-2 text-2xl font-black sm:text-3xl">
                 Manajemen Inventaris
               </h1>
+
               <p className="mt-2 text-sm text-[#92775f]">
                 Pantau bahan baku dan catat setiap perubahan stok.
               </p>
@@ -566,14 +662,18 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             </button>
           </section>
 
-            {movementError && (
+          {/* PESAN ERROR UMUM */}
+
+          {error && (
             <div
-                role="alert"
-                className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700"
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700"
             >
-                ⚠️ {movementError}
+              ⚠️ {error}
             </div>
-            )}
+          )}
+
+          {/* PESAN SUKSES */}
 
           {success && (
             <div
@@ -583,6 +683,8 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
               {success}
             </div>
           )}
+
+          {/* RINGKASAN INVENTARIS */}
 
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
@@ -614,12 +716,17 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                 <p className="text-xs font-medium text-[#92775f]">
                   {item.label}
                 </p>
-                <p className={`mt-3 text-3xl font-black ${item.color}`}>
+
+                <p
+                  className={`mt-3 text-3xl font-black ${item.color}`}
+                >
                   {item.value}
                 </p>
               </div>
             ))}
           </section>
+
+          {/* TAB INVENTARIS */}
 
           <section className="flex flex-wrap gap-2 border-b border-[#e4d3c2]">
             <button
@@ -645,8 +752,13 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             </button>
           </section>
 
+          {/* TABEL BAHAN BAKU */}
+
           {activeTab === "ingredients" && (
             <section className="overflow-hidden rounded-2xl border border-[#eadccf] bg-[#fffaf4] shadow-sm">
+
+              {/* FILTER */}
+
               <div className="flex flex-col gap-3 border-b border-[#eadccf] p-5 lg:flex-row">
                 <input
                   value={search}
@@ -666,9 +778,17 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                   }}
                   className="rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
                 >
-                  <option value="all">Semua Kondisi Stok</option>
-                  <option value="low">Stok Menipis</option>
-                  <option value="normal">Stok Aman</option>
+                  <option value="all">
+                    Semua Kondisi Stok
+                  </option>
+
+                  <option value="low">
+                    Stok Menipis
+                  </option>
+
+                  <option value="normal">
+                    Stok Aman
+                  </option>
                 </select>
 
                 <select
@@ -679,22 +799,49 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                   }}
                   className="rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
                 >
-                  <option value="active">Bahan Aktif</option>
-                  <option value="inactive">Bahan Nonaktif</option>
-                  <option value="all">Semua Status</option>
+                  <option value="active">
+                    Bahan Aktif
+                  </option>
+
+                  <option value="inactive">
+                    Bahan Nonaktif
+                  </option>
+
+                  <option value="all">
+                    Semua Status
+                  </option>
                 </select>
               </div>
+
+              {/* DATA TABEL */}
 
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[850px] text-left text-sm">
                   <thead className="bg-[#f5eee6] text-xs uppercase tracking-wide text-[#80664e]">
                     <tr>
-                      <th className="px-5 py-4">Nama Bahan</th>
-                      <th className="px-5 py-4">Stok Saat Ini</th>
-                      <th className="px-5 py-4">Stok Minimum</th>
-                      <th className="px-5 py-4">Kondisi</th>
-                      <th className="px-5 py-4">Status</th>
-                      <th className="px-5 py-4 text-right">Aksi</th>
+                      <th className="px-5 py-4">
+                        Nama Bahan
+                      </th>
+
+                      <th className="px-5 py-4">
+                        Stok Saat Ini
+                      </th>
+
+                      <th className="px-5 py-4">
+                        Stok Minimum
+                      </th>
+
+                      <th className="px-5 py-4">
+                        Kondisi
+                      </th>
+
+                      <th className="px-5 py-4">
+                        Status
+                      </th>
+
+                      <th className="px-5 py-4 text-right">
+                        Aksi
+                      </th>
                     </tr>
                   </thead>
 
@@ -719,24 +866,35 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                       </tr>
                     ) : (
                       ingredients.map((ingredient) => {
-                        const stockStatus = getStockStatus(ingredient);
+                        const stockStatus =
+                          getStockStatus(ingredient);
 
                         return (
-                          <tr key={ingredient.id} className="hover:bg-[#fdf8f2]">
+                          <tr
+                            key={ingredient.id}
+                            className="hover:bg-[#fdf8f2]"
+                          >
                             <td className="px-5 py-4">
-                              <p className="font-bold">{ingredient.name}</p>
+                              <p className="font-bold">
+                                {ingredient.name}
+                              </p>
+
                               <p className="mt-1 text-xs text-[#92775f]">
                                 Satuan: {ingredient.unit}
                               </p>
                             </td>
 
                             <td className="px-5 py-4 font-bold">
-                              {formatNumber(ingredient.current_stock)}{" "}
+                              {formatNumber(
+                                ingredient.current_stock
+                              )}{" "}
                               {ingredient.unit}
                             </td>
 
                             <td className="px-5 py-4 text-[#80664e]">
-                              {formatNumber(ingredient.minimum_stock)}{" "}
+                              {formatNumber(
+                                ingredient.minimum_stock
+                              )}{" "}
                               {ingredient.unit}
                             </td>
 
@@ -765,21 +923,27 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                                 {ingredient.is_active && (
                                   <>
                                     <button
-                                      onClick={() => openMovement(ingredient)}
+                                      onClick={() =>
+                                        openMovement(ingredient)
+                                      }
                                       className="rounded-lg bg-[#efe1d2] px-3 py-2 text-xs font-bold text-[#543923] hover:bg-[#e6d2bd]"
                                     >
                                       Atur Stok
                                     </button>
 
                                     <button
-                                      onClick={() => openEditIngredient(ingredient)}
+                                      onClick={() =>
+                                        openEditIngredient(ingredient)
+                                      }
                                       className="rounded-lg border border-[#ddc9b5] px-3 py-2 text-xs font-bold hover:bg-[#f5eee6]"
                                     >
                                       Edit
                                     </button>
 
                                     <button
-                                      onClick={() => deactivateIngredient(ingredient)}
+                                      onClick={() =>
+                                        deactivateIngredient(ingredient)
+                                      }
                                       className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"
                                     >
                                       Nonaktifkan
@@ -796,6 +960,8 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                 </table>
               </div>
 
+              {/* PAGINATION BAHAN */}
+
               <div className="flex items-center justify-between border-t border-[#eadccf] px-5 py-4 text-xs text-[#92775f]">
                 <span>
                   {ingredientPagination?.total ?? 0} bahan ditemukan
@@ -803,8 +969,13 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
 
                 <div className="flex items-center gap-2">
                   <button
-                    disabled={!ingredientPagination || ingredientPage <= 1}
-                    onClick={() => setIngredientPage((page) => page - 1)}
+                    disabled={
+                      !ingredientPagination ||
+                      ingredientPage <= 1
+                    }
+                    onClick={() =>
+                      setIngredientPage((page) => page - 1)
+                    }
                     className="rounded-lg border border-[#ddc9b5] px-3 py-2 disabled:opacity-40"
                   >
                     Sebelumnya
@@ -818,9 +989,12 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                   <button
                     disabled={
                       !ingredientPagination ||
-                      ingredientPage >= ingredientPagination.last_page
+                      ingredientPage >=
+                        ingredientPagination.last_page
                     }
-                    onClick={() => setIngredientPage((page) => page + 1)}
+                    onClick={() =>
+                      setIngredientPage((page) => page + 1)
+                    }
                     className="rounded-lg border border-[#ddc9b5] px-3 py-2 disabled:opacity-40"
                   >
                     Berikutnya
@@ -830,10 +1004,15 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             </section>
           )}
 
+          {/* RIWAYAT PERGERAKAN STOK */}
+
           {activeTab === "movements" && (
             <section className="overflow-hidden rounded-2xl border border-[#eadccf] bg-[#fffaf4] shadow-sm">
               <div className="border-b border-[#eadccf] p-5">
-                <h2 className="font-extrabold">Riwayat Pergerakan Stok</h2>
+                <h2 className="font-extrabold">
+                  Riwayat Pergerakan Stok
+                </h2>
+
                 <p className="mt-1 text-xs text-[#92775f]">
                   Semua perubahan stok dan pengguna yang mencatatnya.
                 </p>
@@ -857,7 +1036,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                   <tbody className="divide-y divide-[#eee2d7]">
                     {loading ? (
                       <tr>
-                        <td colSpan={8} className="px-5 py-12 text-center">
+                        <td
+                          colSpan={8}
+                          className="px-5 py-12 text-center"
+                        >
                           Memuat riwayat...
                         </td>
                       </tr>
@@ -926,6 +1108,8 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                 </table>
               </div>
 
+              {/* PAGINATION RIWAYAT */}
+
               <div className="flex items-center justify-between border-t border-[#eadccf] px-5 py-4 text-xs text-[#92775f]">
                 <span>
                   {movementPagination?.total ?? 0} riwayat
@@ -933,8 +1117,13 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
 
                 <div className="flex items-center gap-2">
                   <button
-                    disabled={!movementPagination || movementPage <= 1}
-                    onClick={() => setMovementPage((page) => page - 1)}
+                    disabled={
+                      !movementPagination ||
+                      movementPage <= 1
+                    }
+                    onClick={() =>
+                      setMovementPage((page) => page - 1)
+                    }
                     className="rounded-lg border border-[#ddc9b5] px-3 py-2 disabled:opacity-40"
                   >
                     Sebelumnya
@@ -950,7 +1139,9 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                       !movementPagination ||
                       movementPage >= movementPagination.last_page
                     }
-                    onClick={() => setMovementPage((page) => page + 1)}
+                    onClick={() =>
+                      setMovementPage((page) => page + 1)
+                    }
                     className="rounded-lg border border-[#ddc9b5] px-3 py-2 disabled:opacity-40"
                   >
                     Berikutnya
@@ -960,6 +1151,8 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             </section>
           )}
 
+          {/* FOOTER */}
+
           <footer className="border-t border-[#e4d3c2] pt-5 text-center text-xs text-[#a18b77]">
             LABOR_STATION Management System · Inventory
           </footer>
@@ -967,6 +1160,7 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
       </div>
 
       {/* FORM TAMBAH / EDIT BAHAN */}
+
       {!selectedIngredient && (
         <div
           className="fixed bottom-5 right-5 z-30"
@@ -986,15 +1180,21 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
           >
             <div>
               <h2 className="text-xl font-black">
-                {editingId === null ? "Tambah Bahan Baku" : "Edit Bahan Baku"}
+                {editingId === null
+                  ? "Tambah Bahan Baku"
+                  : "Edit Bahan Baku"}
               </h2>
+
               <p className="mt-1 text-sm text-[#92775f]">
                 Lengkapi informasi bahan baku.
               </p>
             </div>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold">Nama Bahan</span>
+              <span className="text-sm font-semibold">
+                Nama Bahan
+              </span>
+
               <input
                 required
                 maxLength={150}
@@ -1011,7 +1211,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold">Satuan</span>
+              <span className="text-sm font-semibold">
+                Satuan
+              </span>
+
               <input
                 required
                 maxLength={30}
@@ -1029,7 +1232,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
 
             {editingId === null && (
               <label className="block space-y-2">
-                <span className="text-sm font-semibold">Stok Awal</span>
+                <span className="text-sm font-semibold">
+                  Stok Awal
+                </span>
+
                 <input
                   required
                   type="number"
@@ -1048,7 +1254,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             )}
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold">Batas Stok Minimum</span>
+              <span className="text-sm font-semibold">
+                Batas Stok Minimum
+              </span>
+
               <input
                 required
                 type="number"
@@ -1087,6 +1296,7 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
       )}
 
       {/* FORM PERGERAKAN STOK */}
+
       {selectedIngredient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
           <form
@@ -1097,9 +1307,11 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
               <p className="text-xs font-bold uppercase tracking-wider text-[#9b795b]">
                 Stock Movement
               </p>
+
               <h2 className="mt-1 text-xl font-black">
                 Atur Stok: {selectedIngredient.name}
               </h2>
+
               <p className="mt-2 text-sm text-[#92775f]">
                 Stok saat ini:{" "}
                 <strong>
@@ -1109,21 +1321,38 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
               </p>
             </div>
 
+            {/* ERROR DITAMPILKAN DI DALAM MODAL */}
+
+            {movementError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700"
+              >
+                ⚠️ {movementError}
+              </div>
+            )}
+
             <label className="block space-y-2">
-              <span className="text-sm font-semibold">Jenis Pergerakan</span>
+              <span className="text-sm font-semibold">
+                Jenis Pergerakan
+              </span>
+
               <select
                 value={movementForm.type}
                 onChange={(event) =>
                   setMovementForm({
                     ...movementForm,
                     type: event.target.value as MovementForm["type"],
+                    quantity: "",
                   })
                 }
                 className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
               >
                 <option value="IN">Stok Masuk</option>
                 <option value="OUT">Stok Keluar</option>
-                <option value="ADJUSTMENT">Penyesuaian Stok Akhir</option>
+                <option value="ADJUSTMENT">
+                  Penyesuaian Stok Akhir
+                </option>
               </select>
             </label>
 
@@ -1133,10 +1362,15 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                   ? `Stok Akhir (${selectedIngredient.unit})`
                   : `Jumlah (${selectedIngredient.unit})`}
               </span>
+
               <input
                 required
                 type="number"
-                min={movementForm.type === "ADJUSTMENT" ? "0" : "0.001"}
+                min={
+                  movementForm.type === "ADJUSTMENT"
+                    ? "0"
+                    : "0.001"
+                }
                 step="0.001"
                 value={movementForm.quantity}
                 onChange={(event) =>
@@ -1158,7 +1392,10 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             )}
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold">Alasan / Keterangan</span>
+              <span className="text-sm font-semibold">
+                Alasan / Keterangan
+              </span>
+
               <textarea
                 required
                 maxLength={2000}
@@ -1178,7 +1415,11 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setSelectedIngredient(null)}
+                onClick={() => {
+                  setSelectedIngredient(null);
+                  setMovementError("");
+                  setMovementForm(emptyMovementForm);
+                }}
                 className="rounded-xl border border-[#ddc9b5] px-4 py-3 text-sm font-semibold"
               >
                 Batal
@@ -1189,7 +1430,9 @@ async function saveMovement(event: FormEvent<HTMLFormElement>) {
                 disabled={saving}
                 className="rounded-xl bg-[#543923] px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
-                {saving ? "Menyimpan..." : "Simpan Pergerakan"}
+                {saving
+                  ? "Menyimpan..."
+                  : "Simpan Pergerakan"}
               </button>
             </div>
           </form>

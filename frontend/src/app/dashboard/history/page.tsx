@@ -3,8 +3,47 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000/api"
 ).replace(/\/$/, "");
+
+function getCookie(name: string): string | null {
+    const cookie = document.cookie
+        .split("; ")
+        .find((item) => item.startsWith(`${name}=`));
+
+    return cookie
+        ? decodeURIComponent(cookie.substring(name.length + 1))
+        : null;
+    }
+
+    async function getCsrfToken(): Promise<string> {
+    let token = getCookie("XSRF-TOKEN");
+
+    if (!token) {
+        const csrfUrl = API_URL.replace(/\/api$/, "");
+
+        const response = await fetch(`${csrfUrl}/sanctum/csrf-cookie`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+            Accept: "application/json",
+        },
+        });
+
+        if (!response.ok) {
+        throw new Error("Gagal mengambil CSRF token.");
+        }
+
+        token = getCookie("XSRF-TOKEN");
+    }
+
+    if (!token) {
+        throw new Error("CSRF token tidak ditemukan.");
+    }
+
+    return token;
+    }
 
 type TransactionItem = {
   id: number;
@@ -165,14 +204,11 @@ export default function TransactionHistoryPage() {
     const [orderStatusLoading, setOrderStatusLoading] = useState(false);
 
     const getHeaders = useCallback(() => {
-    const token = localStorage.getItem("labor_station_token");
-
     return {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
-  }, []);
+    }, []);
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
@@ -199,6 +235,7 @@ export default function TransactionHistoryPage() {
         `${API_URL}/transactions?${params.toString()}`,
         {
           method: "GET",
+          credentials: "include",
           headers: getHeaders(),
           cache: "no-store",
         }
@@ -273,6 +310,7 @@ export default function TransactionHistoryPage() {
         {
           method: "GET",
           headers: getHeaders(),
+          credentials: "include",
           cache: "no-store",
         }
       );
@@ -290,76 +328,87 @@ export default function TransactionHistoryPage() {
     }
   }
 
-  async function submitPayment() {
+async function submitPayment() {
     if (!selectedTransaction) return;
 
     if (
-      selectedTransaction.payment_status === "PAID" ||
-      selectedTransaction.order_status === "CANCELLED"
+        selectedTransaction.payment_status === "PAID" ||
+        selectedTransaction.order_status === "CANCELLED"
     ) {
-      return;
+        return;
     }
 
     if (
-      selectedTransaction.sales_channel === "GRABFOOD" &&
-      paymentMethod !== "CASH"
+        selectedTransaction.sales_channel === "GRABFOOD" &&
+        paymentMethod !== "CASH"
     ) {
-      setActionMessage(
-        "Transaksi GrabFood harus menggunakan metode pembayaran GrabFood."
-      );
-      return;
+        setActionMessage(
+            "Transaksi GrabFood harus menggunakan metode pembayaran GrabFood."
+        );
+        return;
     }
 
     setPaymentLoading(true);
     setActionMessage("");
 
     try {
-      const response = await fetch(
-        `${API_URL}/transactions/${selectedTransaction.id}/payment`,
-        {
-          method: "POST",
-          headers: getHeaders(),
-          body: JSON.stringify({
-            method:
-              selectedTransaction.sales_channel === "GRABFOOD"
-                ? "GRAB_PLATFORM"
-                : paymentMethod,
-            reference_number: referenceNumber.trim() || null,
-          }),
-        }
-      );
+        // Ambil CSRF token sebelum mengirim request POST.
+        const csrfToken = await getCsrfToken();
 
-      const result = await readResponse(response);
+        const response = await fetch(
+            `${API_URL}/transactions/${selectedTransaction.id}/payment`,
+            {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    ...getHeaders(),
+                    "X-XSRF-TOKEN": csrfToken,
+                },
+                body: JSON.stringify({
+                    method:
+                        selectedTransaction.sales_channel === "GRABFOOD"
+                            ? "GRAB_PLATFORM"
+                            : paymentMethod,
+                    reference_number: referenceNumber.trim() || null,
+                }),
+            }
+        );
 
-      setPaymentOpen(false);
-      setReferenceNumber("");
-      setActionMessage(
-        result.message || "Pembayaran berhasil dikonfirmasi."
-      );
+        const result = await readResponse(response);
 
-      await fetchTransactions();
+        setPaymentOpen(false);
+        setReferenceNumber("");
 
-      const detailResponse = await fetch(
-        `${API_URL}/transactions/${selectedTransaction.id}`,
-        {
-          method: "GET",
-          headers: getHeaders(),
-          cache: "no-store",
-        }
-      );
+        setActionMessage(
+            result.message || "Pembayaran berhasil dikonfirmasi."
+        );
 
-      const detailResult = await readResponse(detailResponse);
-      setSelectedTransaction(detailResult.data);
+        await fetchTransactions();
+
+        // Ambil detail transaksi terbaru.
+        const detailResponse = await fetch(
+            `${API_URL}/transactions/${selectedTransaction.id}`,
+            {
+                method: "GET",
+                credentials: "include",
+                headers: getHeaders(),
+                cache: "no-store",
+            }
+        );
+
+        const detailResult = await readResponse(detailResponse);
+
+        setSelectedTransaction(detailResult.data);
     } catch (err) {
-      setActionMessage(
-        err instanceof Error
-          ? err.message
-          : "Pembayaran gagal diproses."
-      );
+        setActionMessage(
+            err instanceof Error
+                ? err.message
+                : "Pembayaran gagal diproses."
+        );
     } finally {
-      setPaymentLoading(false);
+        setPaymentLoading(false);
     }
-  }
+}
 
 async function updateOrderStatus(
     newStatus: "PREPARING" | "READY" | "COMPLETED" | "CANCELLED"
@@ -367,67 +416,76 @@ async function updateOrderStatus(
     if (!selectedTransaction || orderStatusLoading) return;
 
     if (
-    newStatus === "CANCELLED" &&
-    selectedTransaction.payment_status === "PAID"
-) {
-    setActionMessage(
-        "Transaksi yang sudah lunas tidak dapat dibatalkan."
-    );
-    return;
-}
+        newStatus === "CANCELLED" &&
+        selectedTransaction.payment_status === "PAID"
+    ) {
+        setActionMessage(
+            "Transaksi yang sudah lunas tidak dapat dibatalkan."
+        );
+        return;
+    }
 
     if (newStatus === "CANCELLED") {
-    const confirmed = window.confirm(
-        "Yakin ingin membatalkan pesanan ini? Tindakan ini tidak dapat dibatalkan."
-    );
+        const confirmed = window.confirm(
+            "Yakin ingin membatalkan pesanan ini? Tindakan ini tidak dapat dibatalkan."
+        );
 
-    if (!confirmed) return;
-}
+        if (!confirmed) return;
+    }
 
-  setOrderStatusLoading(true);
-  setActionMessage("");
+    setOrderStatusLoading(true);
+    setActionMessage("");
 
-  try {
-    const response = await fetch(
-      `${API_URL}/transactions/${selectedTransaction.id}/status`,
-      {
-        method: "PATCH",
-        headers: getHeaders(),
-        body: JSON.stringify({
-          order_status: newStatus,
-        }),
-      }
-    );
+    try {
+        // Ambil CSRF token sebelum mengirim request PATCH.
+        const csrfToken = await getCsrfToken();
 
-    const result = await readResponse(response);
+        const response = await fetch(
+            `${API_URL}/transactions/${selectedTransaction.id}/status`,
+            {
+                method: "PATCH",
+                credentials: "include",
+                headers: {
+                    ...getHeaders(),
+                    "X-XSRF-TOKEN": csrfToken,
+                },
+                body: JSON.stringify({
+                    order_status: newStatus,
+                }),
+            }
+        );
 
-    setActionMessage(
-      result.message || "Status pesanan berhasil diperbarui."
-    );
+        const result = await readResponse(response);
 
-    await fetchTransactions();
+        setActionMessage(
+            result.message || "Status pesanan berhasil diperbarui."
+        );
 
-    const detailResponse = await fetch(
-      `${API_URL}/transactions/${selectedTransaction.id}`,
-      {
-        method: "GET",
-        headers: getHeaders(),
-        cache: "no-store",
-      }
-    );
+        await fetchTransactions();
 
-    const detailResult = await readResponse(detailResponse);
+        // Ambil detail transaksi terbaru.
+        const detailResponse = await fetch(
+            `${API_URL}/transactions/${selectedTransaction.id}`,
+            {
+                method: "GET",
+                credentials: "include",
+                headers: getHeaders(),
+                cache: "no-store",
+            }
+        );
 
-    setSelectedTransaction(detailResult.data);
-  } catch (err) {
-    setActionMessage(
-      err instanceof Error
-        ? err.message
-        : "Gagal memperbarui status pesanan."
-    );
-  } finally {
-    setOrderStatusLoading(false);
-  }
+        const detailResult = await readResponse(detailResponse);
+
+        setSelectedTransaction(detailResult.data);
+    } catch (err) {
+        setActionMessage(
+            err instanceof Error
+                ? err.message
+                : "Gagal memperbarui status pesanan."
+        );
+    } finally {
+        setOrderStatusLoading(false);
+    }
 }
 
   function handleSearch(event: React.FormEvent<HTMLFormElement>) {

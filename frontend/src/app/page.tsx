@@ -5,8 +5,43 @@ import Image from "next/image";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000/api"
+  "http://localhost:8000/api"
 ).replace(/\/$/, "");
+
+function getCookie(name: string): string | null {
+  const cookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(`${name}=`));
+
+  return cookie
+    ? decodeURIComponent(cookie.substring(name.length + 1))
+    : null;
+}
+
+async function initializeCsrf(): Promise<string> {
+  const csrfUrl = API_URL.replace(/\/api$/, "");
+
+  const response = await fetch(`${csrfUrl}/sanctum/csrf-cookie`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Gagal menginisialisasi keamanan login.");
+  }
+
+  const token = getCookie("XSRF-TOKEN");
+
+  if (!token) {
+    throw new Error("CSRF token tidak ditemukan.");
+  }
+
+  return token;
+}
+
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -15,52 +50,54 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
+async function handleLogin(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
 
-    try {
-      const response = await fetch(`${API_URL}/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+  setError("");
+  setLoading(true);
 
-      const data = await response.json();
+  try {
+    const csrfToken = await initializeCsrf();
 
-      if (!response.ok) {
-        throw new Error(
-          data.message ||
+    const response = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-XSRF-TOKEN": csrfToken,
+      },
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message ||
           data.errors?.email?.[0] ||
           "Login gagal. Periksa email dan password."
-        );
-      }
-
-      if (!data.token) {
-        throw new Error("Token login tidak ditemukan.");
-      }
-
-      localStorage.setItem("labor_station_token", data.token);
-      localStorage.setItem(
-        "labor_station_user",
-        JSON.stringify(data.user)
       );
-
-      window.location.href = "/dashboard";
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Tidak dapat terhubung ke server."
-      );
-    } finally {
-      setLoading(false);
     }
+
+    if (!data.user) {
+      throw new Error("Data pengguna tidak ditemukan.");
+    }
+
+    window.location.href = "/dashboard";
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Tidak dapat terhubung ke server."
+    );
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <main className="login-page relative flex min-h-[100svh] items-center justify-center overflow-x-hidden px-4 py-5 sm:px-6 lg:px-10 lg:py-8">

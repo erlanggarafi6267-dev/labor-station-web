@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -34,7 +36,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Login pengguna LABOR_STATION.
+     * Login menggunakan session Laravel.
      */
     public function login(Request $request)
     {
@@ -67,7 +69,7 @@ class AuthController extends Controller
             ]);
         }
 
-        // AKUN TANPA ROLE
+        // BLOKIR AKUN TANPA ROLE
         if (!$user->role) {
             $this->writeAuditLog(
                 $request,
@@ -84,12 +86,13 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // BUAT TOKEN
-        $token = $user->createToken(
-            'labor-station-api'
-        )->plainTextToken;
+        // LOGIN MENGGUNAKAN SESSION WEB
+        Auth::guard('web')->login($user);
 
-        // LOGIN BERHASIL
+        // Regenerasi session untuk mencegah session fixation.
+        $request->session()->regenerate();
+
+        // CATAT LOGIN BERHASIL
         $this->writeAuditLog(
             $request,
             $user->id,
@@ -103,7 +106,6 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Login berhasil.',
-            'token' => $token,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -114,13 +116,13 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout dan hapus token aktif.
+     * Logout pengguna dan mengakhiri session.
      */
     public function logout(Request $request)
     {
         $user = $request->user()->load('role');
 
-        // CATAT LOGOUT SEBELUM TOKEN DIHAPUS
+        // CATAT LOGOUT SEBELUM SESSION DIHAPUS
         $this->writeAuditLog(
             $request,
             $user->id,
@@ -132,8 +134,19 @@ class AuthController extends Controller
             ]
         );
 
-        // HAPUS TOKEN AKTIF
-        $request->user()->currentAccessToken()->delete();
+        $currentToken = $user->currentAccessToken();
+
+        // Jika menggunakan Personal Access Token, hapus token aktif.
+        if ($currentToken instanceof PersonalAccessToken) {
+            $currentToken->delete();
+        } else {
+            // Jika menggunakan session SPA, akhiri session.
+            Auth::guard('web')->logout();
+
+            $request->session()->invalidate();
+
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'message' => 'Logout berhasil.',

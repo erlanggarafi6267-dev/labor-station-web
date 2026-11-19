@@ -2,9 +2,47 @@
 
     import { useCallback, useEffect, useState } from "react";
 
-    const API_URL = (
-    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
-    ).replace(/\/$/, "");
+const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000/api"
+).replace(/\/$/, "");
+
+function getCookie(name: string): string | null {
+  const cookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(`${name}=`));
+
+  return cookie
+    ? decodeURIComponent(cookie.substring(name.length + 1))
+    : null;
+}
+
+async function getCsrfToken(): Promise<string> {
+  let token = getCookie("XSRF-TOKEN");
+
+  if (!token) {
+    const csrfUrl = API_URL.replace(/\/api$/, "");
+
+    const response = await fetch(`${csrfUrl}/sanctum/csrf-cookie`, {
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Gagal mengambil CSRF token.");
+    }
+
+    token = getCookie("XSRF-TOKEN");
+  }
+
+  if (!token) {
+    throw new Error("CSRF token tidak ditemukan.");
+  }
+
+  return token;
+}
 
     type User = {
     id: number;
@@ -120,80 +158,91 @@ const navigation = [
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
 
-    useEffect(() => {
-        const token = localStorage.getItem("labor_station_token");
-        const savedUser = localStorage.getItem("labor_station_user");
+useEffect(() => {
+  let active = true;
 
-        if (!token || !savedUser) {
+  async function checkSession() {
+    try {
+      const response = await fetch(`${API_URL}/me`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
         window.location.replace("/");
         return;
-        }
+      }
 
-        try {
-        const parsedUser = JSON.parse(savedUser) as User;
+      const result = await response.json();
+      const currentUser = result.user ?? result;
 
-        if (parsedUser.role !== "owner") {
-            window.location.replace("/");
-            return;
-        }
-
-        setUser(parsedUser);
-        } catch {
-        localStorage.removeItem("labor_station_user");
-        window.location.replace("/");
-        }
-    }, []);
-
-    const fetchDashboard = useCallback(async () => {
-        const token = localStorage.getItem("labor_station_token");
-
-        if (!token) {
+      if (!currentUser.id || currentUser.role !== "owner") {
         window.location.replace("/");
         return;
-        }
+      }
 
-        setLoading(true);
-        setError("");
+      if (active) {
+        setUser(currentUser as User);
+      }
+    } catch {
+      if (active) {
+        window.location.replace("/");
+      }
+    }
+  }
 
-        try {
-        const response = await fetch(
-            `${API_URL}/owner/dashboard?period=${period}`,
-            {
-            method: "GET",
-            headers: {
-                Accept: "application/json",
-                Authorization: `Bearer ${token}`,
-            },
-            cache: "no-store",
-            }
-        );
+  checkSession();
 
-        if (response.status === 401 || response.status === 403) {
-            localStorage.removeItem("labor_station_token");
-            localStorage.removeItem("labor_station_user");
-            window.location.replace("/");
-            return;
-        }
+  return () => {
+    active = false;
+  };
+}, []);
 
-        const result = await response.json();
+const fetchDashboard = useCallback(async () => {
+  setLoading(true);
+  setError("");
 
-        if (!response.ok) {
-            throw new Error(
-            result.message || "Gagal mengambil data dashboard."
-            );
-        }
+  try {
+    const response = await fetch(
+      `${API_URL}/owner/dashboard?period=${period}`,
+      {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      }
+    );
 
-        setDashboard(result);
-        } catch (err) {
-        setError(
-            err instanceof Error
-            ? err.message
-            : "Tidak dapat terhubung ke server."
-        );
-        } finally {
-        setLoading(false);
-        }
-    }, [period]);
+    if (response.status === 401 || response.status === 403) {
+      window.location.replace("/");
+      return;
+    }
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.message || "Gagal mengambil data dashboard."
+      );
+    }
+
+    setDashboard(result);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Tidak dapat terhubung ke server."
+    );
+  } finally {
+    setLoading(false);
+  }
+}, [period]);
 
     useEffect(() => {
         if (user) {
@@ -201,33 +250,30 @@ const navigation = [
         }
     }, [user, fetchDashboard]);
 
-    async function handleLogout() {
-        const token = localStorage.getItem("labor_station_token");
+async function handleLogout() {
+  setLoggingOut(true);
 
-        if (!token) {
-        localStorage.removeItem("labor_station_user");
-        window.location.replace("/");
-        return;
-        }
+  try {
+    const csrfToken = await getCsrfToken();
 
-        setLoggingOut(true);
+    const response = await fetch(`${API_URL}/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "X-XSRF-TOKEN": csrfToken,
+      },
+    });
 
-        try {
-        await fetch(`${API_URL}/logout`, {
-            method: "POST",
-            headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-            },
-        });
-        } catch {
-        // Tetap bersihkan sesi lokal jika koneksi terputus.
-        } finally {
-        localStorage.removeItem("labor_station_token");
-        localStorage.removeItem("labor_station_user");
-        window.location.replace("/");
-        }
+    if (!response.ok) {
+      console.error("Logout gagal:", response.status);
     }
+  } catch (error) {
+    console.error("Logout error:", error);
+  } finally {
+    window.location.replace("/");
+  }
+}
 
     const statuses = [
         { key: "NEW", label: "Pesanan Baru", color: "bg-blue-500" },

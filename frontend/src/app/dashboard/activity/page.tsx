@@ -2,9 +2,48 @@
 
     import { FormEvent, useCallback, useEffect, useState } from "react";
 
-    const API_URL = (
-    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
-    ).replace(/\/$/, "");
+const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:8000/api"
+).replace(/\/$/, "");
+
+function getCookie(name: string): string | null {
+  const cookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(`${name}=`));
+
+  return cookie
+    ? decodeURIComponent(cookie.substring(name.length + 1))
+    : null;
+}
+
+async function getCsrfToken(): Promise<string> {
+  let token = getCookie("XSRF-TOKEN");
+
+  if (!token) {
+    const csrfUrl = API_URL.replace(/\/api$/, "");
+
+    const response = await fetch(`${csrfUrl}/sanctum/csrf-cookie`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Gagal mengambil CSRF token.");
+    }
+
+    token = getCookie("XSRF-TOKEN");
+  }
+
+  if (!token) {
+    throw new Error("CSRF token tidak ditemukan.");
+  }
+
+  return token;
+}
 
     type User = {
     id: number;
@@ -135,96 +174,119 @@
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
     useEffect(() => {
-        const token = localStorage.getItem("labor_station_token");
-        const savedUser = localStorage.getItem("labor_station_user");
+    let active = true;
 
-        if (!token || !savedUser) {
-        window.location.replace("/");
-        return;
-        }
-
+    async function checkSession() {
         try {
-        const parsed = JSON.parse(savedUser) as User;
-
-        if (parsed.role !== "owner") {
-            window.location.replace("/");
-            return;
-        }
-
-        setUser(parsed);
-        } catch {
-        localStorage.removeItem("labor_station_user");
-        window.location.replace("/");
-        }
-    }, []);
-
-    const fetchLogs = useCallback(async () => {
-        const token = localStorage.getItem("labor_station_token");
-
-        if (!token) {
-        window.location.replace("/");
-        return;
-        }
-
-        setLoading(true);
-        setError("");
-
-        try {
-        const params = new URLSearchParams({
-            page: String(page),
-            per_page: "15",
-        });
-
-        if (search) params.set("search", search);
-        if (dateFrom) params.set("date_from", dateFrom);
-        if (dateTo) params.set("date_to", dateTo);
-        if (action) params.set("action", action);
-
-        const response = await fetch(
-            `${API_URL}/owner/audit-logs?${params.toString()}`,
-            {
+        const response = await fetch(`${API_URL}/me`, {
             method: "GET",
+            credentials: "include",
             headers: {
-                Accept: "application/json",
-                Authorization: `Bearer ${token}`,
+            Accept: "application/json",
             },
             cache: "no-store",
-            }
-        );
+        });
 
-        if (response.status === 401) {
-            localStorage.removeItem("labor_station_token");
-            localStorage.removeItem("labor_station_user");
+        if (!response.ok) {
             window.location.replace("/");
             return;
         }
 
         const result = await response.json();
+        const currentUser = result.user ?? result;
+
+        if (!currentUser.id || currentUser.role !== "owner") {
+            window.location.replace("/");
+            return;
+        }
+
+        if (active) {
+            setUser(currentUser as User);
+        }
+        } catch {
+        if (active) {
+            window.location.replace("/");
+        }
+        }
+    }
+
+    checkSession();
+
+    return () => {
+        active = false;
+    };
+    }, []);
+
+    const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+        const params = new URLSearchParams({
+        page: String(page),
+        per_page: "15",
+        });
+
+        if (search) {
+        params.set("search", search);
+        }
+
+        if (dateFrom) {
+        params.set("date_from", dateFrom);
+        }
+
+        if (dateTo) {
+        params.set("date_to", dateTo);
+        }
+
+        if (action) {
+        params.set("action", action);
+        }
+
+        const response = await fetch(
+        `${API_URL}/owner/audit-logs?${params.toString()}`,
+        {
+            method: "GET",
+            credentials: "include",
+            headers: {
+            Accept: "application/json",
+            },
+            cache: "no-store",
+        }
+        );
+
+        if (response.status === 401) {
+        window.location.replace("/");
+        return;
+        }
+
+        const result = await response.json();
 
         if (!response.ok) {
-            throw new Error(
+        throw new Error(
             result.message || "Gagal mengambil riwayat aktivitas."
-            );
+        );
         }
 
         const responseData = result as AuditResponse;
 
         setLogs(responseData.data.data || []);
+
         setPagination({
-            current_page: responseData.data.current_page,
-            last_page: responseData.data.last_page,
-            total: responseData.data.total,
-            per_page: responseData.data.per_page,
+        current_page: responseData.data.current_page,
+        last_page: responseData.data.last_page,
+        total: responseData.data.total,
+        per_page: responseData.data.per_page,
         });
-        } catch (err) {
+    } catch (err) {
         setError(
-            err instanceof Error
+        err instanceof Error
             ? err.message
             : "Tidak dapat terhubung ke server."
         );
-        } finally {
+    } finally {
         setLoading(false);
-        }
+    }
     }, [page, search, dateFrom, dateTo, action]);
 
     useEffect(() => {
@@ -261,27 +323,28 @@
     }
 
     async function handleLogout() {
-        const token = localStorage.getItem("labor_station_token");
+    setLoggingOut(true);
 
-        setLoggingOut(true);
+    try {
+        const csrfToken = await getCsrfToken();
 
-        try {
-        if (token) {
-            await fetch(`${API_URL}/logout`, {
-            method: "POST",
-            headers: {
-                Accept: "application/json",
-                Authorization: `Bearer ${token}`,
-            },
-            });
+        const response = await fetch(`${API_URL}/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+            Accept: "application/json",
+            "X-XSRF-TOKEN": csrfToken,
+        },
+        });
+
+        if (!response.ok) {
+        console.error("Logout gagal:", response.status);
         }
-        } catch {
-        // Sesi lokal tetap dibersihkan jika server tidak dapat dihubungi.
-        } finally {
-        localStorage.removeItem("labor_station_token");
-        localStorage.removeItem("labor_station_user");
+    } catch (error) {
+        console.error("Logout error:", error);
+    } finally {
         window.location.replace("/");
-        }
+    }
     }
 
     const firstItem =
