@@ -119,15 +119,26 @@ class OwnerDashboardController extends Controller
             ->sum('amount');
 
         /*
-         * 5. STATUS PESANAN
-         */
-        $orderStatuses = (clone $transactions)
+        * 5. STATUS PESANAN
+        * Menghitung status transaksi pada periode terpilih.
+        */
+        $orderStatusCounts = (clone $transactions)
             ->select(
                 'order_status',
                 DB::raw('COUNT(*) as total')
             )
             ->groupBy('order_status')
-            ->pluck('total', 'order_status');
+            ->pluck('total', 'order_status')
+            ->map(fn ($total) => (int) $total)
+            ->all();
+
+        $orderStatuses = [
+            'NEW' => $orderStatusCounts['NEW'] ?? 0,
+            'PREPARING' => $orderStatusCounts['PREPARING'] ?? 0,
+            'READY' => $orderStatusCounts['READY'] ?? 0,
+            'COMPLETED' => $orderStatusCounts['COMPLETED'] ?? 0,
+            'CANCELLED' => $orderStatusCounts['CANCELLED'] ?? 0,
+        ];
 
         /*
          * 6. PRODUK TERLARIS

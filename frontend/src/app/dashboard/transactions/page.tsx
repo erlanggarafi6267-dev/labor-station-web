@@ -765,27 +765,39 @@ export default function TransactionsPage() {
   return (
     <>
       <div className="min-h-screen bg-[#f5eee5] text-[#382315]">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#ead9c8] bg-[#fffaf5] px-5 py-4 md:px-8">
-          <div>
-            <p className="text-xs text-[#a47b5d]">
-              Workspace / Transaksi
-            </p>
+<header className="sticky top-0 z-30 border-b border-[#ead9c8] bg-[#fffaf5] px-5 py-4 md:px-8">
+  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+    <div className="flex flex-col items-start gap-3">
+      <a
+        href="/dashboard"
+        className="inline-flex items-center gap-2 rounded-xl border border-[#dfc7b0] bg-white px-4 py-2.5 text-sm font-semibold text-[#543923] transition hover:bg-[#f8eee4]"
+      >
+        <span>←</span>
+        Kembali ke Dashboard
+      </a>
 
-            <h1 className="mt-1 text-xl font-bold">
-              Transaksi Kasir
-            </h1>
-          </div>
+      <div>
+        <p className="text-xs text-[#a47b5d]">
+          Workspace / Transaksi
+        </p>
 
-          <div className="text-right">
-            <p className="text-sm font-semibold">
-              LABOR_STATION
-            </p>
+        <h1 className="mt-1 text-xl font-bold">
+          Transaksi Kasir
+        </h1>
+      </div>
+    </div>
 
-            <p className="text-xs text-[#a47b5d]">
-              Coffee Station Management
-            </p>
-          </div>
-        </header>
+    <div className="text-left sm:text-right">
+      <p className="text-sm font-semibold">
+        LABOR_STATION
+      </p>
+
+      <p className="text-xs text-[#a47b5d]">
+        Coffee Station Management
+      </p>
+    </div>
+  </div>
+</header>
 
         <main className="mx-auto max-w-[1500px] p-4 md:p-8">
           <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">

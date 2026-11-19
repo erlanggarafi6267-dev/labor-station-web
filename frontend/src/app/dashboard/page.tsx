@@ -52,15 +52,16 @@
 
     type Period = "today" | "week" | "month";
 
-    const navigation = [
+const navigation = [
     { label: "Dashboard", icon: "▦", href: "/dashboard", active: true },
     { label: "Transaksi", icon: "▤", href: "/dashboard/transactions" },
+    { label: "Riwayat Transaksi", icon: "◷", href: "/dashboard/history" },
     { label: "Produk", icon: "◈", href: "/dashboard/products" },
     { label: "Inventori", icon: "▣", href: "/dashboard/inventory" },
     { label: "Pengeluaran", icon: "◉", href: "/dashboard/expenses" },
     { label: "Laporan", icon: "▥", href: "/dashboard/reports" },
     { label: "Audit Log", icon: "◷", href: "/dashboard/activity" },
-    ];
+];
 
     function formatRupiah(value: number) {
     return new Intl.NumberFormat("id-ID", {

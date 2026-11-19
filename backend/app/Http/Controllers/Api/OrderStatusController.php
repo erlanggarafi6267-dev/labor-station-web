@@ -11,6 +11,9 @@ use Illuminate\Validation\ValidationException;
 
 class OrderStatusController extends Controller
 {
+    /**
+     * Memperbarui status pesanan.
+     */
     public function update(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([
@@ -29,6 +32,7 @@ class OrderStatusController extends Controller
             $currentStatus = $transaction->order_status;
             $newStatus = $validated['order_status'];
 
+            // Aturan perpindahan status pesanan.
             $allowedTransitions = [
                 'NEW' => ['PREPARING', 'CANCELLED'],
                 'PREPARING' => ['READY'],
@@ -37,6 +41,7 @@ class OrderStatusController extends Controller
                 'CANCELLED' => [],
             ];
 
+            // Validasi perpindahan status.
             if (!in_array(
                 $newStatus,
                 $allowedTransitions[$currentStatus] ?? [],
@@ -49,14 +54,28 @@ class OrderStatusController extends Controller
                 ]);
             }
 
+            // Transaksi lunas tidak boleh dibatalkan tanpa proses refund.
+            if (
+                $newStatus === 'CANCELLED' &&
+                $transaction->payment_status === 'PAID'
+            ) {
+                throw ValidationException::withMessages([
+                    'order_status' => [
+                        'Transaksi yang sudah lunas tidak dapat dibatalkan melalui fitur ini.',
+                    ],
+                ]);
+            }
+
             $updates = [
                 'order_status' => $newStatus,
             ];
 
+            // Simpan waktu penyelesaian.
             if ($newStatus === 'COMPLETED') {
                 $updates['completed_at'] = now();
             }
 
+            // Simpan waktu pembatalan.
             if ($newStatus === 'CANCELLED') {
                 $updates['cancelled_at'] = now();
             }

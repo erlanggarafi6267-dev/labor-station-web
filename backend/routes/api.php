@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\ProductCatalogController;
 use App\Http\Controllers\Api\ProductManagementController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\UserPermissionController;
+use App\Http\Controllers\Api\InventoryController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -33,7 +35,38 @@ Route::post('/login', [AuthController::class, 'login'])
 
 Route::middleware('auth:sanctum')->group(function () {
 
-    // Authentication
+        /*
+    |--------------------------------------------------------------------------
+    | INVENTORY MANAGEMENT
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('inventory')->group(function () {
+        Route::get('/', [InventoryController::class, 'index'])
+            ->middleware('permission:inventory.view');
+
+        Route::post('/', [InventoryController::class, 'store'])
+            ->middleware('permission:inventory.manage');
+
+        Route::put('/{id}', [InventoryController::class, 'update'])
+            ->middleware('permission:inventory.manage');
+
+        Route::delete('/{id}', [InventoryController::class, 'destroy'])
+            ->middleware('permission:inventory.manage');
+
+        Route::post('/{id}/movements', [InventoryController::class, 'move'])
+            ->middleware('permission:inventory.stock.manage');
+
+        Route::get('/movements', [InventoryController::class, 'movements'])
+            ->middleware('permission:inventory.view');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUTHENTICATION
+    |--------------------------------------------------------------------------
+    */
+
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -108,10 +141,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions/{id}/payment', [PaymentController::class, 'store'])
         ->middleware('permission:transaction.payment');
 
+    // Update status pesanan
     Route::patch('/transactions/{id}/status', [OrderStatusController::class, 'update'])
         ->middleware('permission:transaction.status.update');
 
-    // GrabFood payout tetap khusus Owner.
+    // GrabFood payout khusus Owner
     Route::post('/transactions/{id}/payout', [GrabFoodPayoutController::class, 'store'])
         ->middleware('role:owner');
 

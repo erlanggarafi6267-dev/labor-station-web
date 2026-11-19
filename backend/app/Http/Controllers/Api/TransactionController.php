@@ -14,6 +14,59 @@ use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
+
+    /**
+ * Mengubah status pesanan.
+ */
+public function updateStatus(Request $request, string $id): JsonResponse
+{
+    $validated = $request->validate([
+        'order_status' => [
+            'required',
+            'in:NEW,PROCESSING,READY,COMPLETED,CANCELLED',
+        ],
+    ]);
+
+    $transaction = Transaction::findOrFail($id);
+
+    $currentStatus = $transaction->order_status;
+    $newStatus = $validated['order_status'];
+
+    $allowedTransitions = [
+        'NEW' => ['PROCESSING', 'CANCELLED'],
+        'PROCESSING' => ['READY', 'CANCELLED'],
+        'READY' => ['COMPLETED'],
+        'COMPLETED' => [],
+        'CANCELLED' => [],
+    ];
+
+    if (!in_array(
+        $newStatus,
+        $allowedTransitions[$currentStatus] ?? [],
+        true
+    )) {
+        return response()->json([
+            'message' => "Status tidak dapat diubah dari {$currentStatus} menjadi {$newStatus}.",
+        ], 422);
+    }
+
+    if ($newStatus === 'CANCELLED' &&
+        $transaction->payment_status === 'PAID') {
+        return response()->json([
+            'message' => 'Transaksi yang sudah lunas tidak dapat dibatalkan melalui fitur ini.',
+        ], 422);
+    }
+
+    $transaction->update([
+        'order_status' => $newStatus,
+    ]);
+
+    return response()->json([
+        'message' => 'Status pesanan berhasil diperbarui.',
+        'data' => $transaction->fresh(),
+    ]);
+}
+
     /**
      * Menampilkan daftar transaksi.
      */

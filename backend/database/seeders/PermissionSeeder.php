@@ -31,6 +31,10 @@ class PermissionSeeder extends Seeder
 
             ['name' => 'Melihat Audit Log', 'slug' => 'audit.view'],
             ['name' => 'Mengatur Permission Pengguna', 'slug' => 'permission.manage'],
+
+            ['name' => 'Melihat Inventaris', 'slug' => 'inventory.view'],
+            ['name' => 'Mengelola Data Bahan Baku', 'slug' => 'inventory.manage'],
+            ['name' => 'Mengelola Pergerakan Stok', 'slug' => 'inventory.stock.manage'],
         ];
 
         foreach ($permissions as $permission) {
