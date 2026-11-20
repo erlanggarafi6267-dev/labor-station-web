@@ -12,9 +12,9 @@ class OwnerSeeder extends Seeder
 {
     public function run(): void
     {
-        $email = trim((string) env('OWNER_EMAIL'));
-        $name = trim((string) env('OWNER_NAME'));
-        $password = (string) env('OWNER_PASSWORD');
+        $email = trim((string) config('owner.email'));
+        $name = trim((string) config('owner.name'));
+        $password = (string) config('owner.password');
 
         if (
             $email === '' ||
