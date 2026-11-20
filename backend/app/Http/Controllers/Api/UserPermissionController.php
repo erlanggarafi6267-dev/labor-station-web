@@ -13,7 +13,7 @@ class UserPermissionController extends Controller
 {
     /**
      * Daftar pengguna yang dapat diatur izinnya.
-     * Owner tidak ditampilkan karena memiliki akses penuh.
+     * Hanya Admin dan Staff yang ditampilkan.
      */
     public function index(): JsonResponse
     {
@@ -45,6 +45,7 @@ class UserPermissionController extends Controller
 
     /**
      * Detail izin seorang pengguna.
+     * Target hanya boleh Admin atau Staff.
      */
     public function show(int $userId): JsonResponse
     {
@@ -53,9 +54,12 @@ class UserPermissionController extends Controller
             'permissions:id,name,slug',
         ])->findOrFail($userId);
 
-        if (!$user->role || $user->role->slug === 'owner') {
+        if (
+            !$user->role ||
+            !in_array($user->role->slug, ['admin', 'staff'], true)
+        ) {
             return response()->json([
-                'message' => 'Permission Owner tidak dapat diubah.',
+                'message' => 'Permission hanya dapat diatur untuk akun Admin atau Staff.',
             ], 422);
         }
 
@@ -77,7 +81,7 @@ class UserPermissionController extends Controller
     public function update(Request $request, int $userId): JsonResponse
     {
         $validated = $request->validate([
-            'permissions' => ['required', 'array'],
+            'permissions' => ['present', 'array'],
             'permissions.*' => [
                 'required',
                 'string',
@@ -88,9 +92,12 @@ class UserPermissionController extends Controller
 
         $user = User::with('role')->findOrFail($userId);
 
-        if (!$user->role || $user->role->slug === 'owner') {
+        if (
+            !$user->role ||
+            !in_array($user->role->slug, ['admin', 'staff'], true)
+        ) {
             return response()->json([
-                'message' => 'Permission Owner tidak dapat diubah.',
+                'message' => 'Permission hanya dapat diatur untuk akun Admin atau Staff.',
             ], 422);
         }
 
