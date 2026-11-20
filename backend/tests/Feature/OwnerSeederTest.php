@@ -120,6 +120,53 @@ class OwnerSeederTest extends TestCase
         (new OwnerSeeder())->run();
     }
 
+
+    public function test_seeder_rejects_email_already_used_by_non_owner(): void
+    {
+    $staffRole = Role::create([
+        'name' => 'Staff',
+        'slug' => 'staff',
+    ]);
+
+    $staff = User::create([
+        'name' => 'Existing Staff',
+        'email' => 'owner@example.com',
+        'password' => 'ExistingStaffPassword2026!',
+        'role_id' => $staffRole->id,
+    ]);
+
+    Role::create([
+        'name' => 'Owner',
+        'slug' => 'owner',
+    ]);
+
+    $this->configureOwner();
+
+    $this->expectException(RuntimeException::class);
+    $this->expectExceptionMessage(
+        'OWNER_EMAIL sudah digunakan oleh akun yang bukan Owner.'
+    );
+
+    try {
+        (new OwnerSeeder())->run();
+    } finally {
+        $staff->refresh();
+
+        $this->assertSame('staff', $staff->role->slug);
+        $this->assertSame('Existing Staff', $staff->name);
+
+        $this->assertTrue(
+            Hash::check(
+                'ExistingStaffPassword2026!',
+                $staff->password
+            )
+        );
+
+        $this->assertDatabaseCount('users', 1);
+    }
+}
+
+
     public function test_seeder_fails_when_owner_role_does_not_exist(): void
     {
         $this->configureOwner();

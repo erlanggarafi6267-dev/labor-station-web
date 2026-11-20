@@ -30,8 +30,7 @@ class OwnerSeeder extends Seeder
 
         $ownerRole = Role::where('slug', 'owner')->firstOrFail();
 
-        // Jangan mengubah password owner yang sudah ada setiap kali seeder dijalankan.
-        User::firstOrCreate(
+        $owner = User::firstOrCreate(
             ['email' => $email],
             [
                 'name' => $name,
@@ -39,5 +38,13 @@ class OwnerSeeder extends Seeder
                 'password' => Hash::make($password),
             ]
         );
+
+        // Email yang sudah digunakan role lain tidak boleh menjadi akun Owner.
+        if ((int) $owner->role_id !== (int) $ownerRole->id) {
+            throw new RuntimeException(
+                'OWNER_EMAIL sudah digunakan oleh akun yang bukan Owner. ' .
+                'Gunakan email khusus untuk akun Owner.'
+            );
+        }
     }
 }
