@@ -12,6 +12,8 @@ class Payment extends Model
         'verified_by',
         'method',
         'amount',
+        'cash_received',
+        'change_amount',
         'reference_number',
         'paid_at',
     ];
@@ -20,6 +22,8 @@ class Payment extends Model
     {
         return [
             'amount' => 'integer',
+            'cash_received' => 'integer',
+            'change_amount' => 'integer',
             'paid_at' => 'datetime',
         ];
     }
