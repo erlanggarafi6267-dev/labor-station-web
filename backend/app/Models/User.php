@@ -27,20 +27,42 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class);
     }
 
+    /**
+     * Relasi user dengan permissions.
+     */
     public function permissions(): BelongsToMany
     {
         return $this->belongsToMany(
             Permission::class,
             'user_permissions'
-        )->withPivot('granted_by')->withTimestamps();
+        )
+            ->withPivot('granted_by')
+            ->withTimestamps();
     }
 
+    /**
+     * Memeriksa hak akses pengguna.
+     */
     public function hasPermission(string $permission): bool
     {
-        if ($this->role?->slug === 'owner') {
+        $role = $this->role;
+
+        // User tanpa role tidak memiliki akses.
+        if (!$role) {
+            return false;
+        }
+
+        // Owner memiliki akses penuh.
+        if ($role->slug === 'owner') {
             return true;
         }
 
+        // Hanya Admin dan Staff yang menggunakan permission.
+        if (!in_array($role->slug, ['admin', 'staff'], true)) {
+            return false;
+        }
+
+        // Admin dan Staff wajib memiliki permission terkait.
         return $this->permissions()
             ->where('slug', $permission)
             ->exists();

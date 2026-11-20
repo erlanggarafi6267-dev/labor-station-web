@@ -18,6 +18,12 @@ class PaymentController extends Controller
                 'required',
                 'in:CASH,QRIS,TRANSFER,GRAB_PLATFORM',
             ],
+            'cash_received' => [
+                'nullable',
+                'required_if:method,CASH',
+                'integer',
+                'min:0',
+            ],
             'reference_number' => [
                 'nullable',
                 'string',
@@ -34,7 +40,6 @@ class PaymentController extends Controller
                 ->lockForUpdate()
                 ->findOrFail($id);
 
-            // Validasi status pesanan
             if ($transaction->order_status === 'CANCELLED') {
                 throw ValidationException::withMessages([
                     'transaction' => [
@@ -43,7 +48,6 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Validasi channel dan metode pembayaran
             if (
                 $transaction->sales_channel === 'GRABFOOD' &&
                 $validated['method'] !== 'GRAB_PLATFORM'
@@ -66,7 +70,6 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Validasi status pembayaran
             if ($transaction->payment_status === 'PAID') {
                 throw ValidationException::withMessages([
                     'payment' => [
@@ -83,7 +86,9 @@ class PaymentController extends Controller
                 ]);
             }
 
-            if ($transaction->total <= 0) {
+            $total = (int) $transaction->total;
+
+            if ($total <= 0) {
                 throw ValidationException::withMessages([
                     'payment' => [
                         'Total transaksi harus lebih dari nol.',
@@ -99,18 +104,34 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Simpan pembayaran
+            $cashReceived = null;
+            $changeAmount = null;
+
+            if ($validated['method'] === 'CASH') {
+                $cashReceived = (int) $validated['cash_received'];
+
+                if ($cashReceived < $total) {
+                    throw ValidationException::withMessages([
+                        'cash_received' => [
+                            'Uang yang diterima kurang dari total pembayaran.',
+                        ],
+                    ]);
+                }
+
+                $changeAmount = $cashReceived - $total;
+            }
+
             $transaction->payment()->create([
                 'verified_by' => $request->user()->id,
                 'method' => $validated['method'],
-                'amount' => $transaction->total,
+                'amount' => $total,
+                'cash_received' => $cashReceived,
+                'change_amount' => $changeAmount,
                 'reference_number' =>
                     $validated['reference_number'] ?? null,
                 'paid_at' => now(),
             ]);
 
-            // Pembayaran pelanggan sudah selesai.
-            // Pencairan GrabFood tetap diproses terpisah.
             $transaction->update([
                 'payment_status' => 'PAID',
             ]);

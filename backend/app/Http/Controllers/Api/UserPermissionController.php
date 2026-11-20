@@ -12,8 +12,24 @@ use Illuminate\Support\Facades\DB;
 class UserPermissionController extends Controller
 {
     /**
+     * Role yang boleh diatur permission-nya.
+     */
+    private const MANAGEABLE_ROLES = ['admin', 'staff'];
+
+    /**
+     * Memastikan user memiliki role yang boleh dikelola.
+     */
+    private function hasManageableRole(?string $roleSlug): bool
+    {
+        return in_array(
+            $roleSlug,
+            self::MANAGEABLE_ROLES,
+            true
+        );
+    }
+
+    /**
      * Daftar pengguna yang dapat diatur izinnya.
-     * Hanya Admin dan Staff yang ditampilkan.
      */
     public function index(): JsonResponse
     {
@@ -23,7 +39,7 @@ class UserPermissionController extends Controller
                 'permissions:id,name,slug',
             ])
             ->whereHas('role', function ($query) {
-                $query->whereIn('slug', ['admin', 'staff']);
+                $query->whereIn('slug', self::MANAGEABLE_ROLES);
             })
             ->orderBy('name')
             ->get()
@@ -32,7 +48,7 @@ class UserPermissionController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'role' => $user->role?->slug,
+                    'role' => $user->role->slug,
                     'permissions' => $user->permissions->pluck('slug'),
                 ];
             });
@@ -44,8 +60,7 @@ class UserPermissionController extends Controller
     }
 
     /**
-     * Detail izin seorang pengguna.
-     * Target hanya boleh Admin atau Staff.
+     * Detail permission seorang pengguna.
      */
     public function show(int $userId): JsonResponse
     {
@@ -54,12 +69,9 @@ class UserPermissionController extends Controller
             'permissions:id,name,slug',
         ])->findOrFail($userId);
 
-        if (
-            !$user->role ||
-            !in_array($user->role->slug, ['admin', 'staff'], true)
-        ) {
+        if (!$this->hasManageableRole($user->role?->slug)) {
             return response()->json([
-                'message' => 'Permission hanya dapat diatur untuk akun Admin atau Staff.',
+                'message' => 'Pengguna ini tidak dapat diatur permission-nya.',
             ], 422);
         }
 
@@ -77,6 +89,8 @@ class UserPermissionController extends Controller
 
     /**
      * Mengganti seluruh permission pengguna.
+     *
+     * Array kosong diperbolehkan untuk mencabut seluruh permission.
      */
     public function update(Request $request, int $userId): JsonResponse
     {
@@ -90,27 +104,33 @@ class UserPermissionController extends Controller
             ],
         ]);
 
-        $user = User::with('role')->findOrFail($userId);
-
-        if (
-            !$user->role ||
-            !in_array($user->role->slug, ['admin', 'staff'], true)
-        ) {
-            return response()->json([
-                'message' => 'Permission hanya dapat diatur untuk akun Admin atau Staff.',
-            ], 422);
-        }
-
         $permissionIds = Permission::query()
             ->whereIn('slug', $validated['permissions'])
             ->pluck('id')
             ->all();
 
-        DB::transaction(function () use ($user, $permissionIds, $request) {
+        $actorId = $request->user()->id;
+
+        $user = DB::transaction(function () use (
+            $userId,
+            $permissionIds,
+            $actorId
+        ) {
+            $user = User::query()
+                ->with('role')
+                ->lockForUpdate()
+                ->findOrFail($userId);
+
+            if (!$this->hasManageableRole($user->role?->slug)) {
+                abort(422, 'Pengguna ini tidak dapat diatur permission-nya.');
+            }
+
             $user->permissions()->syncWithPivotValues(
                 $permissionIds,
-                ['granted_by' => $request->user()->id]
+                ['granted_by' => $actorId]
             );
+
+            return $user;
         });
 
         $user->load('permissions:id,name,slug');
