@@ -1,10 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-
-const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
-).replace(/\/$/, "");
+import { apiRequest } from "@/lib/api";
 
 type Ingredient = {
   id: number;
@@ -151,8 +148,7 @@ export default function InventoryPage() {
     useState<Paginated<Movement> | null>(null);
 
   const [userName, setUserName] = useState("Owner");
-
-  const token = () => localStorage.getItem("labor_station_token");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const [movementError, setMovementError] = useState("");
 
@@ -162,34 +158,10 @@ export default function InventoryPage() {
 
   const request = useCallback(
     async (path: string, options: RequestInit = {}) => {
-      const currentToken = localStorage.getItem(
-        "labor_station_token"
-      );
-
-      if (!currentToken) {
-        window.location.replace("/");
-        throw new Error("Sesi login tidak ditemukan.");
-      }
-
-      const response = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers: {
-          Accept: "application/json",
-          ...(options.body
-            ? { "Content-Type": "application/json" }
-            : {}),
-          Authorization: `Bearer ${currentToken}`,
-          ...options.headers,
-        },
-        cache: "no-store",
-      });
+      const response = await apiRequest(path, options);
 
       if (response.status === 401) {
-        localStorage.removeItem("labor_station_token");
-        localStorage.removeItem("labor_station_user");
-
         window.location.replace("/");
-
         throw new Error("Sesi login telah berakhir.");
       }
 
@@ -272,40 +244,58 @@ export default function InventoryPage() {
   }, [fetchIngredients, fetchMovements]);
 
   // =====================================================
-  // AUTHENTICATION
+  // AUTHENTICATION - SESSION COOKIE
   // =====================================================
 
   useEffect(() => {
-    const savedToken = token();
-    const savedUser = localStorage.getItem(
-      "labor_station_user"
-    );
+    let active = true;
 
-    if (!savedToken || !savedUser) {
-      window.location.replace("/");
-      return;
-    }
+    async function checkSession() {
+      try {
+        const response = await apiRequest("/me");
 
-    try {
-      const user = JSON.parse(savedUser);
+        if (!response.ok) {
+          window.location.replace("/");
+          return;
+        }
 
-      if (user.role !== "owner") {
-        window.location.replace("/");
-        return;
+        const result = await response.json();
+        const user = result.user ?? result;
+
+        if (!user?.id || user.role !== "owner") {
+          window.location.replace("/");
+          return;
+        }
+
+        if (active) {
+          setUserName(user.name || "Owner");
+          setIsAuthenticated(true);
+        }
+      } catch (err) {
+        console.error("Gagal memverifikasi sesi:", err);
+
+        if (active) {
+          window.location.replace("/");
+        }
       }
-
-      setUserName(user.name || "Owner");
-    } catch {
-      localStorage.removeItem("labor_station_user");
-      window.location.replace("/");
     }
+
+    checkSession();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
+  // =====================================================
+  // FETCH DATA SETELAH LOGIN TERVERIFIKASI
+  // =====================================================
+
   useEffect(() => {
-    if (token()) {
-      refreshData();
-    }
-  }, [refreshData]);
+    if (!isAuthenticated) return;
+
+    refreshData();
+  }, [isAuthenticated, refreshData]);
 
   // =====================================================
   // FORM BAHAN BAKU
@@ -526,22 +516,11 @@ export default function InventoryPage() {
   // =====================================================
 
   async function handleLogout() {
-    const currentToken = token();
-
     try {
-      if (currentToken) {
-        await fetch(`${API_URL}/logout`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${currentToken}`,
-          },
-        });
-      }
+      await apiRequest("/logout", {
+        method: "POST",
+      });
     } finally {
-      localStorage.removeItem("labor_station_token");
-      localStorage.removeItem("labor_station_user");
-
       window.location.replace("/");
     }
   }
@@ -628,7 +607,7 @@ export default function InventoryPage() {
 
           <button
             onClick={refreshData}
-            disabled={loading}
+            disabled={loading || !isAuthenticated}
             className="rounded-xl bg-[#543923] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#69452d] disabled:opacity-50"
           >
             Refresh

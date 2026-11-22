@@ -87,7 +87,9 @@ function getErrorMessage(
   if (result.errors) {
     const firstError = Object.values(result.errors)[0]?.[0];
 
-    if (firstError) return firstError;
+    if (firstError) {
+      return firstError;
+    }
   }
 
   return result.message || fallback;
@@ -105,7 +107,9 @@ function getPrice(
 }
 
 function getStatusLabel(status: string) {
-  return status === "AVAILABLE" ? "Tersedia" : "Tidak tersedia";
+  return status === "AVAILABLE"
+    ? "Tersedia"
+    : "Tidak tersedia";
 }
 
 export default function ProductsPage() {
@@ -128,8 +132,11 @@ export default function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
 
   const [userName, setUserName] = useState("Owner");
+
+  // Notifikasi halaman dan modal dipisahkan.
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [modalError, setModalError] = useState("");
 
   const token = () =>
     typeof window !== "undefined"
@@ -154,6 +161,7 @@ export default function ProductsPage() {
       const headers = new Headers(options.headers);
 
       headers.set("Accept", "application/json");
+
       headers.set(
         "Authorization",
         `Bearer ${currentToken}`
@@ -176,6 +184,7 @@ export default function ProductsPage() {
         localStorage.removeItem("labor_station_user");
 
         window.location.replace("/");
+
         throw new Error("Sesi login telah berakhir.");
       }
 
@@ -246,21 +255,28 @@ export default function ProductsPage() {
     page,
   ]);
 
+  // =====================================================
+  // REFRESH DATA
+  // =====================================================
+
   const refreshData = useCallback(async () => {
     setLoading(true);
-    setError("");
 
     try {
       await Promise.all([
         fetchProducts(),
         fetchCategories(),
       ]);
+
+      return true;
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Gagal memuat data produk."
       );
+
+      return false;
     } finally {
       setLoading(false);
     }
@@ -272,6 +288,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     const savedToken = token();
+
     const savedUser = localStorage.getItem(
       "labor_station_user"
     );
@@ -309,6 +326,7 @@ export default function ProductsPage() {
   function resetForm() {
     setForm(emptyForm);
     setEditingId(null);
+    setModalError("");
     setModalOpen(false);
   }
 
@@ -321,9 +339,10 @@ export default function ProductsPage() {
     });
 
     setEditingId(null);
-    setModalOpen(true);
+    setModalError("");
     setError("");
     setSuccess("");
+    setModalOpen(true);
   }
 
   function openEditProduct(product: Product) {
@@ -346,9 +365,10 @@ export default function ProductsPage() {
       ),
     });
 
-    setModalOpen(true);
+    setModalError("");
     setError("");
     setSuccess("");
+    setModalOpen(true);
   }
 
   function updateForm<K extends keyof ProductForm>(
@@ -359,6 +379,10 @@ export default function ProductsPage() {
       ...previous,
       [key]: value,
     }));
+
+    // Bersihkan peringatan lama setelah pengguna
+    // mulai memperbaiki isi formulir.
+    setModalError("");
   }
 
   function toggleTemperature(value: string) {
@@ -375,6 +399,8 @@ export default function ProductsPage() {
           : [...previous.temperature_options, value],
       };
     });
+
+    setModalError("");
   }
 
   // =====================================================
@@ -386,11 +412,24 @@ export default function ProductsPage() {
   ) {
     event.preventDefault();
 
+    if (saving) {
+      return;
+    }
+
     setSaving(true);
+    setModalError("");
     setError("");
     setSuccess("");
 
     try {
+      if (!form.category_id) {
+        throw new Error("Kategori produk wajib dipilih.");
+      }
+
+      if (!form.name.trim()) {
+        throw new Error("Nama produk wajib diisi.");
+      }
+
       if (
         form.offline_status === "AVAILABLE" &&
         Number(form.offline_price) <= 0
@@ -451,16 +490,20 @@ export default function ProductsPage() {
         }
       );
 
-      setSuccess(
+      const successMessage =
         editingId === null
           ? "Produk berhasil ditambahkan."
-          : "Produk berhasil diperbarui."
-      );
+          : "Produk berhasil diperbarui.";
 
       resetForm();
+
+      setSuccess(successMessage);
+
+      // Refresh tidak lagi menghapus pesan sukses.
       await refreshData();
     } catch (err) {
-      setError(
+      // Error tetap berada di dalam modal.
+      setModalError(
         err instanceof Error
           ? err.message
           : "Gagal menyimpan produk."
@@ -479,7 +522,9 @@ export default function ProductsPage() {
       `Arsipkan produk "${product.name}"?\n\nProduk akan dinonaktifkan dan tidak dihapus dari riwayat transaksi.`
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setError("");
     setSuccess("");
@@ -510,6 +555,7 @@ export default function ProductsPage() {
   function handleLogout() {
     localStorage.removeItem("labor_station_token");
     localStorage.removeItem("labor_station_user");
+
     window.location.replace("/");
   }
 
@@ -519,7 +565,6 @@ export default function ProductsPage() {
 
   return (
     <main className="min-h-screen bg-[#f5eee6] text-[#392619]">
-
       {/* SIDEBAR */}
 
       <aside className="fixed inset-y-0 left-0 hidden w-[250px] flex-col bg-[#302016] text-[#fff5e9] lg:flex">
@@ -568,6 +613,7 @@ export default function ProductsPage() {
           </p>
 
           <button
+            type="button"
             onClick={handleLogout}
             className="mt-5 w-full rounded-xl px-4 py-3 text-left text-sm text-[#f2c6b8] hover:bg-red-500/10"
           >
@@ -579,7 +625,6 @@ export default function ProductsPage() {
       {/* KONTEN UTAMA */}
 
       <div className="lg:ml-[250px]">
-
         {/* HEADER */}
 
         <header className="flex h-[76px] items-center justify-between border-b border-[#e8d9ca] bg-[#fffaf4] px-5 sm:px-8">
@@ -594,7 +639,12 @@ export default function ProductsPage() {
           </div>
 
           <button
-            onClick={refreshData}
+            type="button"
+            onClick={() => {
+              setError("");
+              setSuccess("");
+              refreshData();
+            }}
             disabled={loading}
             className="rounded-xl bg-[#543923] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#69452d] disabled:opacity-50"
           >
@@ -603,7 +653,6 @@ export default function ProductsPage() {
         </header>
 
         <div className="mx-auto max-w-[1450px] space-y-7 p-4 sm:p-7 lg:p-9">
-
           {/* JUDUL */}
 
           <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -617,11 +666,13 @@ export default function ProductsPage() {
               </h1>
 
               <p className="mt-2 text-sm text-[#92775f]">
-                Kelola produk, kategori, harga penjualan, dan ketersediaan channel.
+                Kelola produk, kategori, harga penjualan,
+                dan ketersediaan channel.
               </p>
             </div>
 
             <button
+              type="button"
               onClick={openCreateProduct}
               disabled={categories.length === 0}
               className="rounded-xl bg-[#543923] px-5 py-3 text-sm font-bold text-white hover:bg-[#69452d] disabled:cursor-not-allowed disabled:opacity-50"
@@ -630,25 +681,41 @@ export default function ProductsPage() {
             </button>
           </section>
 
-          {/* ERROR */}
+          {/* NOTIFIKASI HALAMAN */}
 
           {error && (
             <div
               role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
+              className="flex items-start justify-between gap-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
             >
-              {error}
+              <span>{error}</span>
+
+              <button
+                type="button"
+                onClick={() => setError("")}
+                aria-label="Tutup peringatan"
+                className="shrink-0 text-lg leading-none"
+              >
+                ×
+              </button>
             </div>
           )}
-
-          {/* SUCCESS */}
 
           {success && (
             <div
               role="status"
-              className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+              className="flex items-start justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800"
             >
-              {success}
+              <span>{success}</span>
+
+              <button
+                type="button"
+                onClick={() => setSuccess("")}
+                aria-label="Tutup notifikasi sukses"
+                className="shrink-0 text-lg leading-none"
+              >
+                ×
+              </button>
             </div>
           )}
 
@@ -699,7 +766,6 @@ export default function ProductsPage() {
           {/* TABEL PRODUK */}
 
           <section className="overflow-hidden rounded-2xl border border-[#eadccf] bg-[#fffaf4] shadow-sm">
-
             {/* FILTER */}
 
             <div className="flex flex-col gap-3 border-b border-[#eadccf] p-5 lg:flex-row">
@@ -759,7 +825,9 @@ export default function ProductsPage() {
                     <th className="px-5 py-4">GRABFOOD</th>
                     <th className="px-5 py-4">Suhu</th>
                     <th className="px-5 py-4">Status</th>
-                    <th className="px-5 py-4 text-right">Aksi</th>
+                    <th className="px-5 py-4 text-right">
+                      Aksi
+                    </th>
                   </tr>
                 </thead>
 
@@ -811,12 +879,15 @@ export default function ProductsPage() {
 
                           <span
                             className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                              product.offline_status === "AVAILABLE"
+                              product.offline_status ===
+                              "AVAILABLE"
                                 ? "bg-emerald-100 text-emerald-700"
                                 : "bg-gray-100 text-gray-600"
                             }`}
                           >
-                            {getStatusLabel(product.offline_status)}
+                            {getStatusLabel(
+                              product.offline_status
+                            )}
                           </span>
                         </td>
 
@@ -829,18 +900,23 @@ export default function ProductsPage() {
 
                           <span
                             className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                              product.grabfood_status === "AVAILABLE"
+                              product.grabfood_status ===
+                              "AVAILABLE"
                                 ? "bg-emerald-100 text-emerald-700"
                                 : "bg-gray-100 text-gray-600"
                             }`}
                           >
-                            {getStatusLabel(product.grabfood_status)}
+                            {getStatusLabel(
+                              product.grabfood_status
+                            )}
                           </span>
                         </td>
 
                         <td className="px-5 py-4">
                           {product.temperature_options?.length
-                            ? product.temperature_options.join(" / ")
+                            ? product.temperature_options.join(
+                                " / "
+                              )
                             : "-"}
                         </td>
 
@@ -852,14 +928,19 @@ export default function ProductsPage() {
                                 : "bg-gray-100 text-gray-600"
                             }`}
                           >
-                            {product.is_active ? "Aktif" : "Nonaktif"}
+                            {product.is_active
+                              ? "Aktif"
+                              : "Nonaktif"}
                           </span>
                         </td>
 
                         <td className="px-5 py-4">
                           <div className="flex justify-end gap-2">
                             <button
-                              onClick={() => openEditProduct(product)}
+                              type="button"
+                              onClick={() =>
+                                openEditProduct(product)
+                              }
                               className="rounded-lg border border-[#ddc9b5] px-3 py-2 text-xs font-bold text-[#543923] hover:bg-[#f5eee6]"
                             >
                               Edit
@@ -867,7 +948,10 @@ export default function ProductsPage() {
 
                             {product.is_active && (
                               <button
-                                onClick={() => deleteProduct(product)}
+                                type="button"
+                                onClick={() =>
+                                  deleteProduct(product)
+                                }
                                 className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50"
                               >
                                 Arsipkan
@@ -893,16 +977,24 @@ export default function ProductsPage() {
 
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() =>
-                    setPage((previous) => Math.max(1, previous - 1))
+                    setPage((previous) =>
+                      Math.max(1, previous - 1)
+                    )
                   }
-                  disabled={!pagination || page <= 1 || loading}
+                  disabled={
+                    !pagination ||
+                    page <= 1 ||
+                    loading
+                  }
                   className="rounded-lg border border-[#ddc9b5] px-4 py-2 text-xs font-bold disabled:opacity-40"
                 >
                   Sebelumnya
                 </button>
 
                 <button
+                  type="button"
                   onClick={() =>
                     setPage((previous) =>
                       Math.min(
@@ -929,12 +1021,21 @@ export default function ProductsPage() {
       {/* MODAL TAMBAH / EDIT PRODUK */}
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-6 w-full max-w-2xl rounded-2xl bg-[#fffaf4] shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-modal-title"
+            className="my-6 w-full max-w-2xl overflow-hidden rounded-2xl bg-[#fffaf4] shadow-2xl"
+          >
+            {/* HEADER MODAL */}
 
             <div className="flex items-center justify-between border-b border-[#eadccf] px-6 py-5">
               <div>
-                <h2 className="text-xl font-black">
+                <h2
+                  id="product-modal-title"
+                  className="text-xl font-black"
+                >
                   {editingId === null
                     ? "Tambah Produk"
                     : "Edit Produk"}
@@ -946,18 +1047,51 @@ export default function ProductsPage() {
               </div>
 
               <button
+                type="button"
                 onClick={resetForm}
-                className="rounded-lg px-3 py-2 text-xl text-[#92775f] hover:bg-[#f5eee6]"
+                disabled={saving}
+                aria-label="Tutup modal produk"
+                className="rounded-lg px-3 py-2 text-xl text-[#92775f] hover:bg-[#f5eee6] disabled:opacity-50"
               >
                 ×
               </button>
             </div>
 
+            {/* NOTIFIKASI ERROR DI DALAM MODAL */}
+
+            {modalError && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="mx-6 mt-5 flex items-start justify-between gap-3 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 shadow-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-black">
+                    Gagal menyimpan produk
+                  </p>
+
+                  <p className="mt-1 break-words leading-relaxed">
+                    {modalError}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setModalError("")}
+                  aria-label="Tutup peringatan"
+                  className="shrink-0 rounded-md px-2 text-lg font-bold text-red-700 hover:bg-red-100"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* FORM */}
+
             <form
               onSubmit={saveProduct}
               className="max-h-[75vh] space-y-5 overflow-y-auto p-6"
             >
-
               {/* INFORMASI PRODUK */}
 
               <section className="space-y-4">
@@ -966,11 +1100,15 @@ export default function ProductsPage() {
                 </h3>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold">
+                  <label
+                    htmlFor="product-name"
+                    className="mb-2 block text-sm font-semibold"
+                  >
                     Nama Produk *
                   </label>
 
                   <input
+                    id="product-name"
                     required
                     maxLength={150}
                     value={form.name}
@@ -984,19 +1122,28 @@ export default function ProductsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="product-category"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       Kategori *
                     </label>
 
                     <select
+                      id="product-category"
                       required
                       value={form.category_id}
                       onChange={(event) =>
-                        updateForm("category_id", event.target.value)
+                        updateForm(
+                          "category_id",
+                          event.target.value
+                        )
                       }
                       className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
                     >
-                      <option value="">Pilih kategori</option>
+                      <option value="">
+                        Pilih kategori
+                      </option>
 
                       {categories.map((category) => (
                         <option
@@ -1010,11 +1157,15 @@ export default function ProductsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="product-sku"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       SKU
                     </label>
 
                     <input
+                      id="product-sku"
                       maxLength={50}
                       value={form.sku}
                       onChange={(event) =>
@@ -1027,15 +1178,22 @@ export default function ProductsPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold">
+                  <label
+                    htmlFor="product-description"
+                    className="mb-2 block text-sm font-semibold"
+                  >
                     Deskripsi
                   </label>
 
                   <textarea
+                    id="product-description"
                     rows={3}
                     value={form.description}
                     onChange={(event) =>
-                      updateForm("description", event.target.value)
+                      updateForm(
+                        "description",
+                        event.target.value
+                      )
                     }
                     placeholder="Deskripsi produk (opsional)"
                     className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
@@ -1054,7 +1212,8 @@ export default function ProductsPage() {
                   </h3>
 
                   <p className="mt-1 text-xs text-[#92775f]">
-                    Berlaku untuk produk minuman yang dapat disajikan panas atau dingin.
+                    Berlaku untuk produk minuman yang dapat
+                    disajikan panas atau dingin.
                   </p>
                 </div>
 
@@ -1063,7 +1222,9 @@ export default function ProductsPage() {
                     <label
                       key={temperature}
                       className={`flex cursor-pointer items-center gap-2 rounded-xl border px-5 py-3 text-sm font-bold ${
-                        form.temperature_options.includes(temperature)
+                        form.temperature_options.includes(
+                          temperature
+                        )
                           ? "border-[#8b674d] bg-[#f5eee6] text-[#543923]"
                           : "border-[#ddc9b5] bg-white"
                       }`}
@@ -1096,11 +1257,15 @@ export default function ProductsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="offline-status"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       Status
                     </label>
 
                     <select
+                      id="offline-status"
                       value={form.offline_status}
                       onChange={(event) =>
                         updateForm(
@@ -1110,7 +1275,10 @@ export default function ProductsPage() {
                       }
                       className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
                     >
-                      <option value="AVAILABLE">Tersedia</option>
+                      <option value="AVAILABLE">
+                        Tersedia
+                      </option>
+
                       <option value="UNAVAILABLE">
                         Tidak tersedia
                       </option>
@@ -1118,16 +1286,23 @@ export default function ProductsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="offline-price"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       Harga OFFLINE (Rp)
                     </label>
 
                     <input
+                      id="offline-price"
                       type="number"
                       min="0"
                       value={form.offline_price}
                       onChange={(event) =>
-                        updateForm("offline_price", event.target.value)
+                        updateForm(
+                          "offline_price",
+                          event.target.value
+                        )
                       }
                       placeholder="Contoh: 12000"
                       className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
@@ -1147,11 +1322,15 @@ export default function ProductsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="grabfood-status"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       Status
                     </label>
 
                     <select
+                      id="grabfood-status"
                       value={form.grabfood_status}
                       onChange={(event) =>
                         updateForm(
@@ -1161,7 +1340,10 @@ export default function ProductsPage() {
                       }
                       className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
                     >
-                      <option value="AVAILABLE">Tersedia</option>
+                      <option value="AVAILABLE">
+                        Tersedia
+                      </option>
+
                       <option value="UNAVAILABLE">
                         Tidak tersedia
                       </option>
@@ -1169,16 +1351,23 @@ export default function ProductsPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold">
+                    <label
+                      htmlFor="grabfood-price"
+                      className="mb-2 block text-sm font-semibold"
+                    >
                       Harga GRABFOOD (Rp)
                     </label>
 
                     <input
+                      id="grabfood-price"
                       type="number"
                       min="0"
                       value={form.grabfood_price}
                       onChange={(event) =>
-                        updateForm("grabfood_price", event.target.value)
+                        updateForm(
+                          "grabfood_price",
+                          event.target.value
+                        )
                       }
                       placeholder="Contoh: 15000"
                       className="w-full rounded-xl border border-[#ddc9b5] bg-white px-4 py-3 text-sm"
@@ -1187,11 +1376,14 @@ export default function ProductsPage() {
                 </div>
               </section>
 
+              {/* CATATAN */}
+
               <div className="rounded-xl bg-[#f5eee6] p-4 text-xs leading-relaxed text-[#80664e]">
-                <strong>Catatan:</strong> Setiap channel yang berstatus
-                Tersedia wajib memiliki harga. Harga OFFLINE dan
-                GRABFOOD dapat berbeda. Mengubah harga satu channel
-                tidak mengubah harga channel lainnya.
+                <strong>Catatan:</strong> Setiap channel yang
+                berstatus Tersedia wajib memiliki harga.
+                Harga OFFLINE dan GRABFOOD dapat berbeda.
+                Mengubah harga satu channel tidak mengubah
+                harga channel lainnya.
               </div>
 
               {/* TOMBOL */}
@@ -1201,14 +1393,17 @@ export default function ProductsPage() {
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-xl border border-[#ddc9b5] px-5 py-3 text-sm font-bold text-[#543923]"
+                  className="rounded-xl border border-[#ddc9b5] px-5 py-3 text-sm font-bold text-[#543923] disabled:opacity-50"
                 >
                   Batal
                 </button>
 
                 <button
                   type="submit"
-                  disabled={saving || categories.length === 0}
+                  disabled={
+                    saving ||
+                    categories.length === 0
+                  }
                   className="rounded-xl bg-[#543923] px-6 py-3 text-sm font-bold text-white hover:bg-[#69452d] disabled:opacity-50"
                 >
                   {saving
