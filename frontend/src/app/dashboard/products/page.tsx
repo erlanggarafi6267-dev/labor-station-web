@@ -7,10 +7,7 @@ import {
   useState,
 } from "react";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000/api"
-).replace(/\/$/, "");
+import { apiRequest } from "@/lib/api";
 
 type Category = {
   id: number;
@@ -154,17 +151,24 @@ export default function ProductsPage() {
         throw new Error("Sesi login tidak ditemukan.");
       }
 
-      const response = await fetch(`${API_URL}${path}`, {
+      const headers = new Headers(options.headers);
+
+      headers.set("Accept", "application/json");
+      headers.set(
+        "Authorization",
+        `Bearer ${currentToken}`
+      );
+
+      if (
+        options.body &&
+        !(options.body instanceof FormData)
+      ) {
+        headers.set("Content-Type", "application/json");
+      }
+
+      const response = await apiRequest(path, {
         ...options,
-        headers: {
-          Accept: "application/json",
-          ...(options.body
-            ? { "Content-Type": "application/json" }
-            : {}),
-          Authorization: `Bearer ${currentToken}`,
-          ...options.headers,
-        },
-        cache: "no-store",
+        headers,
       });
 
       if (response.status === 401) {
