@@ -57,6 +57,18 @@ type ProductForm = {
   grabfood_price: string;
 };
 
+type AuthUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+};
+
+type ApiError = {
+  message?: string;
+  errors?: Record<string, string[]>;
+};
+
 const emptyForm: ProductForm = {
   category_id: "",
   name: "",
@@ -78,10 +90,7 @@ function formatRupiah(value: number | string) {
 }
 
 function getErrorMessage(
-  result: {
-    message?: string;
-    errors?: Record<string, string[]>;
-  },
+  result: ApiError,
   fallback: string
 ) {
   if (result.errors) {
@@ -127,68 +136,37 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
 
   const [userName, setUserName] = useState("Owner");
 
-  // Notifikasi halaman dan modal dipisahkan.
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [modalError, setModalError] = useState("");
 
-  const token = () =>
-    typeof window !== "undefined"
-      ? localStorage.getItem("labor_station_token")
-      : null;
-
   // =====================================================
   // API REQUEST
+  // Seluruh request menggunakan Sanctum session.
+  // Tidak menggunakan localStorage atau Bearer token.
   // =====================================================
 
   const request = useCallback(
     async (path: string, options: RequestInit = {}) => {
-      const currentToken = localStorage.getItem(
-        "labor_station_token"
-      );
-
-      if (!currentToken) {
-        window.location.replace("/");
-        throw new Error("Sesi login tidak ditemukan.");
-      }
-
-      const headers = new Headers(options.headers);
-
-      headers.set("Accept", "application/json");
-
-      headers.set(
-        "Authorization",
-        `Bearer ${currentToken}`
-      );
-
-      if (
-        options.body &&
-        !(options.body instanceof FormData)
-      ) {
-        headers.set("Content-Type", "application/json");
-      }
-
-      const response = await apiRequest(path, {
-        ...options,
-        headers,
-      });
+      const response = await apiRequest(path, options);
 
       if (response.status === 401) {
-        localStorage.removeItem("labor_station_token");
-        localStorage.removeItem("labor_station_user");
-
         window.location.replace("/");
-
         throw new Error("Sesi login telah berakhir.");
       }
 
-      const result = await response.json().catch(() => ({}));
+      const result: ApiError & {
+        data?: any;
+      } = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
@@ -203,6 +181,56 @@ export default function ProductsPage() {
     },
     []
   );
+
+  // =====================================================
+  // VALIDASI SESSION DAN ROLE OWNER
+  // Identitas pengguna diambil dari backend.
+  // =====================================================
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkSession() {
+      try {
+        const result = await request("/me");
+
+    const responseData = result as unknown as {
+      user?: AuthUser;
+    };
+
+const user = responseData.user;
+
+        if (!user || !user.id) {
+          window.location.replace("/");
+          return;
+        }
+
+        if (user.role !== "owner") {
+          window.location.replace("/");
+          return;
+        }
+
+        if (!active) return;
+
+        setUserName(user.name || "Owner");
+        setAuthenticated(true);
+      } catch {
+        if (active) {
+          window.location.replace("/");
+        }
+      } finally {
+        if (active) {
+          setAuthChecking(false);
+        }
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      active = false;
+    };
+  }, [request]);
 
   // =====================================================
   // LOAD KATEGORI
@@ -245,8 +273,16 @@ export default function ProductsPage() {
       `/owner/products?${params.toString()}`
     );
 
-    setProducts(result.data.data || []);
-    setPagination(result.data);
+    const productData = result.data;
+
+    if (Array.isArray(productData)) {
+      setProducts(productData);
+      setPagination(null);
+      return;
+    }
+
+    setProducts(productData?.data || []);
+    setPagination(productData || null);
   }, [
     request,
     search,
@@ -261,6 +297,7 @@ export default function ProductsPage() {
 
   const refreshData = useCallback(async () => {
     setLoading(true);
+    setError("");
 
     try {
       await Promise.all([
@@ -282,42 +319,12 @@ export default function ProductsPage() {
     }
   }, [fetchProducts, fetchCategories]);
 
-  // =====================================================
-  // AUTHENTICATION
-  // =====================================================
-
+  // Ambil data hanya setelah session owner tervalidasi.
   useEffect(() => {
-    const savedToken = token();
-
-    const savedUser = localStorage.getItem(
-      "labor_station_user"
-    );
-
-    if (!savedToken || !savedUser) {
-      window.location.replace("/");
-      return;
-    }
-
-    try {
-      const user = JSON.parse(savedUser);
-
-      if (user.role !== "owner") {
-        window.location.replace("/");
-        return;
-      }
-
-      setUserName(user.name || "Owner");
-    } catch {
-      localStorage.removeItem("labor_station_user");
-      window.location.replace("/");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (token()) {
+    if (authenticated) {
       refreshData();
     }
-  }, [refreshData]);
+  }, [authenticated, refreshData]);
 
   // =====================================================
   // FORM PRODUK
@@ -380,8 +387,6 @@ export default function ProductsPage() {
       [key]: value,
     }));
 
-    // Bersihkan peringatan lama setelah pengguna
-    // mulai memperbaiki isi formulir.
     setModalError("");
   }
 
@@ -404,6 +409,55 @@ export default function ProductsPage() {
   }
 
   // =====================================================
+  // VALIDASI FORM
+  // =====================================================
+
+  function validateForm() {
+    if (!form.category_id) {
+      throw new Error("Kategori produk wajib dipilih.");
+    }
+
+    if (!form.name.trim()) {
+      throw new Error("Nama produk wajib diisi.");
+    }
+
+    const offlinePrice = Number(form.offline_price);
+    const grabfoodPrice = Number(form.grabfood_price);
+
+    if (
+      form.offline_status === "AVAILABLE" &&
+      (!Number.isFinite(offlinePrice) || offlinePrice <= 0)
+    ) {
+      throw new Error(
+        "Harga OFFLINE wajib diisi jika channel tersedia."
+      );
+    }
+
+    if (
+      form.grabfood_status === "AVAILABLE" &&
+      (!Number.isFinite(grabfoodPrice) || grabfoodPrice <= 0)
+    ) {
+      throw new Error(
+        "Harga GRABFOOD wajib diisi jika channel tersedia."
+      );
+    }
+
+    if (
+      form.offline_price.trim() !== "" &&
+      (!Number.isFinite(offlinePrice) || offlinePrice < 0)
+    ) {
+      throw new Error("Harga OFFLINE tidak valid.");
+    }
+
+    if (
+      form.grabfood_price.trim() !== "" &&
+      (!Number.isFinite(grabfoodPrice) || grabfoodPrice < 0)
+    ) {
+      throw new Error("Harga GRABFOOD tidak valid.");
+    }
+  }
+
+  // =====================================================
   // SIMPAN PRODUK
   // =====================================================
 
@@ -412,9 +466,7 @@ export default function ProductsPage() {
   ) {
     event.preventDefault();
 
-    if (saving) {
-      return;
-    }
+    if (saving) return;
 
     setSaving(true);
     setModalError("");
@@ -422,31 +474,7 @@ export default function ProductsPage() {
     setSuccess("");
 
     try {
-      if (!form.category_id) {
-        throw new Error("Kategori produk wajib dipilih.");
-      }
-
-      if (!form.name.trim()) {
-        throw new Error("Nama produk wajib diisi.");
-      }
-
-      if (
-        form.offline_status === "AVAILABLE" &&
-        Number(form.offline_price) <= 0
-      ) {
-        throw new Error(
-          "Harga OFFLINE wajib diisi jika channel tersedia."
-        );
-      }
-
-      if (
-        form.grabfood_status === "AVAILABLE" &&
-        Number(form.grabfood_price) <= 0
-      ) {
-        throw new Error(
-          "Harga GRABFOOD wajib diisi jika channel tersedia."
-        );
-      }
+      validateForm();
 
       const prices: ProductPrice[] = [];
 
@@ -499,10 +527,8 @@ export default function ProductsPage() {
 
       setSuccess(successMessage);
 
-      // Refresh tidak lagi menghapus pesan sukses.
       await refreshData();
     } catch (err) {
-      // Error tetap berada di dalam modal.
       setModalError(
         err instanceof Error
           ? err.message
@@ -514,7 +540,7 @@ export default function ProductsPage() {
   }
 
   // =====================================================
-  // HAPUS / ARSIP PRODUK
+  // ARSIP PRODUK
   // =====================================================
 
   async function deleteProduct(product: Product) {
@@ -522,9 +548,7 @@ export default function ProductsPage() {
       `Arsipkan produk "${product.name}"?\n\nProduk akan dinonaktifkan dan tidak dihapus dari riwayat transaksi.`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     setError("");
     setSuccess("");
@@ -550,13 +574,37 @@ export default function ProductsPage() {
 
   // =====================================================
   // LOGOUT
+  // Mengakhiri session di backend.
   // =====================================================
 
-  function handleLogout() {
-    localStorage.removeItem("labor_station_token");
-    localStorage.removeItem("labor_station_user");
+  async function handleLogout() {
+    try {
+      await request("/logout", {
+        method: "POST",
+      });
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      window.location.replace("/");
+    }
+  }
 
-    window.location.replace("/");
+  // =====================================================
+  // LOADING DAN AUTH CHECK
+  // =====================================================
+
+  if (authChecking || !authenticated) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f5eee6]">
+        <div className="text-center">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[#e8d9ca] border-t-[#69452d]" />
+
+          <p className="mt-4 text-sm font-medium text-[#92775f]">
+            Memverifikasi sesi pengguna...
+          </p>
+        </div>
+      </main>
+    );
   }
 
   // =====================================================
@@ -879,8 +927,7 @@ export default function ProductsPage() {
 
                           <span
                             className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                              product.offline_status ===
-                              "AVAILABLE"
+                              product.offline_status === "AVAILABLE"
                                 ? "bg-emerald-100 text-emerald-700"
                                 : "bg-gray-100 text-gray-600"
                             }`}
@@ -900,8 +947,7 @@ export default function ProductsPage() {
 
                           <span
                             className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                              product.grabfood_status ===
-                              "AVAILABLE"
+                              product.grabfood_status === "AVAILABLE"
                                 ? "bg-emerald-100 text-emerald-700"
                                 : "bg-gray-100 text-gray-600"
                             }`}
@@ -914,9 +960,7 @@ export default function ProductsPage() {
 
                         <td className="px-5 py-4">
                           {product.temperature_options?.length
-                            ? product.temperature_options.join(
-                                " / "
-                              )
+                            ? product.temperature_options.join(" / ")
                             : "-"}
                         </td>
 
@@ -1057,7 +1101,7 @@ export default function ProductsPage() {
               </button>
             </div>
 
-            {/* NOTIFIKASI ERROR DI DALAM MODAL */}
+            {/* ERROR MODAL */}
 
             {modalError && (
               <div
@@ -1297,6 +1341,7 @@ export default function ProductsPage() {
                       id="offline-price"
                       type="number"
                       min="0"
+                      step="1"
                       value={form.offline_price}
                       onChange={(event) =>
                         updateForm(
@@ -1362,6 +1407,7 @@ export default function ProductsPage() {
                       id="grabfood-price"
                       type="number"
                       min="0"
+                      step="1"
                       value={form.grabfood_price}
                       onChange={(event) =>
                         updateForm(

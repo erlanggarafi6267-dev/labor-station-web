@@ -16,7 +16,8 @@ use Illuminate\Validation\Rule;
 class ProductManagementController extends Controller
 {
     /**
-     * Daftar produk untuk pengelolaan produk.
+     * Menampilkan daftar produk.
+     * Produk soft deleted tetap tersedia pada filter inactive/all.
      */
     public function index(Request $request): JsonResponse
     {
@@ -27,39 +28,42 @@ class ProductManagementController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $products = Product::query()
+        $status = $validated['status'] ?? 'active';
+
+        $query = Product::query()
+            ->when(
+                $status !== 'active',
+                fn ($builder) => $builder->withTrashed()
+            )
             ->with([
                 'category:id,name,slug',
                 'prices:id,product_id,sales_channel,price,is_active',
-            ])
-            ->when(
-                !empty($validated['search']),
-                function ($query) use ($validated) {
-                    $search = $validated['search'];
+            ]);
 
-                    $query->where(function ($subQuery) use ($search) {
-                        $subQuery
-                            ->where('name', 'ILIKE', "%{$search}%")
-                            ->orWhere('sku', 'ILIKE', "%{$search}%");
-                    });
-                }
-            )
-            ->when(
-                !empty($validated['category_id']),
-                fn ($query) => $query->where(
-                    'category_id',
-                    $validated['category_id']
-                )
-            )
-            ->when(
-                ($validated['status'] ?? 'active') !== 'all',
-                function ($query) use ($validated) {
-                    $query->where(
-                        'is_active',
-                        ($validated['status'] ?? 'active') === 'active'
-                    );
-                }
-            )
+        if (!empty($validated['search'])) {
+            $search = $validated['search'];
+
+            $query->where(function ($builder) use ($search) {
+                $builder
+                    ->where('name', 'ILIKE', "%{$search}%")
+                    ->orWhere('sku', 'ILIKE', "%{$search}%");
+            });
+        }
+
+        if (!empty($validated['category_id'])) {
+            $query->where(
+                'category_id',
+                $validated['category_id']
+            );
+        }
+
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        $products = $query
             ->orderBy('name')
             ->paginate($validated['per_page'] ?? 15)
             ->withQueryString();
@@ -71,7 +75,7 @@ class ProductManagementController extends Controller
     }
 
     /**
-     * Detail satu produk.
+     * Detail produk.
      */
     public function show(int $id): JsonResponse
     {
@@ -87,10 +91,7 @@ class ProductManagementController extends Controller
     }
 
     /**
-     * Membuat produk dengan satu atau dua harga channel.
-     *
-     * Produk OFFLINE saja cukup mengirim satu harga OFFLINE.
-     * Produk yang tersedia di kedua channel mengirim dua harga.
+     * Membuat produk baru.
      */
     public function store(Request $request): JsonResponse
     {
@@ -149,17 +150,6 @@ class ProductManagementController extends Controller
 
         $prices = collect($validated['prices']);
 
-        $priceChannels = $prices
-            ->pluck('sales_channel')
-            ->unique()
-            ->values();
-
-        if ($priceChannels->count() !== $prices->count()) {
-            return response()->json([
-                'message' => 'Setiap channel hanya boleh memiliki satu harga.',
-            ], 422);
-        }
-
         $priceErrors = $this->validateAvailableChannelPrices(
             $validated['offline_status'],
             $validated['grabfood_status'],
@@ -181,11 +171,14 @@ class ProductManagementController extends Controller
             $product = Product::create([
                 'category_id' => $validated['category_id'],
                 'name' => $validated['name'],
-                'slug' => $this->generateProductSlug($validated['name']),
+                'slug' => $this->generateProductSlug(
+                    $validated['name']
+                ),
                 'sku' => $validated['sku'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'image_path' => $validated['image_path'] ?? null,
-                'temperature_options' => $validated['temperature_options'] ?? null,
+                'temperature_options' =>
+                    $validated['temperature_options'] ?? null,
                 'offline_status' => $validated['offline_status'],
                 'grabfood_status' => $validated['grabfood_status'],
                 'is_active' => true,
@@ -232,14 +225,18 @@ class ProductManagementController extends Controller
     }
 
     /**
-     * Memperbarui data produk dan harga.
+     * Memperbarui produk.
      *
-     * Harga dapat diperbarui per channel tanpa harus mengirim
-     * harga channel lainnya.
+     * Jika produk sudah diarsipkan dan menerima is_active=true,
+     * produk akan dipulihkan menggunakan restore().
      */
     public function update(Request $request, int $id): JsonResponse
     {
-        $product = Product::with('prices')->findOrFail($id);
+        $product = Product::withTrashed()
+            ->with('prices')
+            ->findOrFail($id);
+
+        $isArchived = $product->trashed();
 
         // ==================================================
         // PERMISSION CHECK
@@ -247,7 +244,6 @@ class ProductManagementController extends Controller
 
         $permissionChecks = [];
 
-        // Perubahan informasi utama produk.
         if ($request->hasAny([
             'category_id',
             'name',
@@ -259,12 +255,10 @@ class ProductManagementController extends Controller
             $permissionChecks[] = 'product.update';
         }
 
-        // Perubahan harga OFFLINE / GRABFOOD.
         if ($request->has('prices')) {
             $permissionChecks[] = 'product.price.update';
         }
 
-        // Perubahan status ketersediaan produk.
         if ($request->hasAny([
             'offline_status',
             'grabfood_status',
@@ -273,7 +267,6 @@ class ProductManagementController extends Controller
             $permissionChecks[] = 'product.status.update';
         }
 
-        // Pastikan seluruh permission terpenuhi.
         foreach (array_unique($permissionChecks) as $permission) {
             if (!$request->user()->hasPermission($permission)) {
                 return response()->json([
@@ -282,7 +275,6 @@ class ProductManagementController extends Controller
                 ], 403);
             }
         }
-
 
         $validated = $request->validate([
             'category_id' => [
@@ -336,7 +328,9 @@ class ProductManagementController extends Controller
         ]);
 
         if (isset($validated['category_id'])) {
-            $category = Category::findOrFail($validated['category_id']);
+            $category = Category::findOrFail(
+                $validated['category_id']
+            );
 
             if (!$category->is_active) {
                 return response()->json([
@@ -353,16 +347,19 @@ class ProductManagementController extends Controller
         $grabfoodStatus = $validated['grabfood_status']
             ?? $product->grabfood_status;
 
+        $willRestore = $isArchived
+            && ($validated['is_active'] ?? false) === true;
+
         /*
-         * Jika status channel diubah menjadi AVAILABLE,
-         * channel tersebut wajib sudah memiliki harga aktif
-         * atau menerima harga baru pada request ini.
+         * Saat restore, harga lama boleh digunakan kembali
+         * meskipun is_active pada ProductPrice sebelumnya false.
          */
         $priceErrors = $this->validateAvailableChannelPrices(
             $offlineStatus,
             $grabfoodStatus,
             $submittedPrices,
-            $product
+            $product,
+            $willRestore
         );
 
         if (!empty($priceErrors)) {
@@ -378,7 +375,8 @@ class ProductManagementController extends Controller
             $submittedPrices,
             $offlineStatus,
             $grabfoodStatus,
-            $request
+            $request,
+            $willRestore
         ) {
             $before = $product->fresh()
                 ->load('prices')
@@ -395,13 +393,22 @@ class ProductManagementController extends Controller
                 );
             }
 
+            /*
+             * Pulihkan record soft deleted terlebih dahulu.
+             */
+            if ($willRestore) {
+                $product->restore();
+            }
+
             $product->update($productData);
 
             /*
-             * Status UNAVAILABLE otomatis menonaktifkan harga
-             * channel terkait.
+             * Sinkronisasi status harga dengan status channel.
              */
-            if (isset($validated['offline_status'])) {
+            if (
+                isset($validated['offline_status'])
+                || $willRestore
+            ) {
                 ProductPrice::where('product_id', $product->id)
                     ->where('sales_channel', 'OFFLINE')
                     ->update([
@@ -409,7 +416,10 @@ class ProductManagementController extends Controller
                     ]);
             }
 
-            if (isset($validated['grabfood_status'])) {
+            if (
+                isset($validated['grabfood_status'])
+                || $willRestore
+            ) {
                 ProductPrice::where('product_id', $product->id)
                     ->where('sales_channel', 'GRABFOOD')
                     ->update([
@@ -419,7 +429,7 @@ class ProductManagementController extends Controller
 
             /*
              * Harga yang dikirim hanya memperbarui channel terkait.
-             * Harga channel lainnya tetap dipertahankan.
+             * Harga channel lainnya tidak dihapus.
              */
             foreach ($submittedPrices as $price) {
                 $channel = $price['sales_channel'];
@@ -442,7 +452,7 @@ class ProductManagementController extends Controller
 
             $this->writeAuditLog(
                 $request,
-                'UPDATE_PRODUCT',
+                $willRestore ? 'RESTORE_PRODUCT' : 'UPDATE_PRODUCT',
                 $product,
                 [
                     'before' => $before,
@@ -459,20 +469,29 @@ class ProductManagementController extends Controller
         });
 
         return response()->json([
-            'message' => 'Produk berhasil diperbarui.',
+            'message' => $willRestore
+                ? 'Produk berhasil diaktifkan kembali.'
+                : 'Produk berhasil diperbarui.',
             'data' => $updatedProduct,
         ]);
     }
 
     /**
-     * Menghapus produk secara soft delete.
-     * Data transaksi lama tetap dipertahankan.
+     * Mengarsipkan produk tanpa menghapus riwayat transaksi.
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $product = Product::findOrFail($id);
 
         DB::transaction(function () use ($product, $request) {
+            $before = $product->fresh()
+                ->load('prices')
+                ->toArray();
+
+            /*
+             * Pertahankan offline_status dan grabfood_status
+             * agar konfigurasi channel dapat dipulihkan.
+             */
             $product->update([
                 'is_active' => false,
             ]);
@@ -489,6 +508,7 @@ class ProductManagementController extends Controller
                 'DELETE_PRODUCT',
                 $product,
                 [
+                    'before' => $before,
                     'name' => $product->name,
                     'sku' => $product->sku,
                 ]
@@ -496,21 +516,19 @@ class ProductManagementController extends Controller
         });
 
         return response()->json([
-            'message' => 'Produk berhasil dinonaktifkan dan diarsipkan.',
+            'message' => 'Produk berhasil diarsipkan.',
         ]);
     }
 
     /**
-     * Memastikan channel AVAILABLE memiliki harga.
-     *
-     * Untuk update, harga aktif lama tetap dapat digunakan
-     * jika harga channel tersebut tidak dikirim ulang.
+     * Memvalidasi harga channel yang tersedia.
      */
     private function validateAvailableChannelPrices(
         string $offlineStatus,
         string $grabfoodStatus,
         $submittedPrices,
-        ?Product $product = null
+        ?Product $product = null,
+        bool $allowArchivedPrice = false
     ): array {
         $errors = [];
 
@@ -524,25 +542,36 @@ class ProductManagementController extends Controller
                 continue;
             }
 
-            $hasSubmittedPrice = $submittedPrices->contains(
+            $submittedPrice = $submittedPrices->firstWhere(
                 'sales_channel',
                 $channel
             );
 
-            if ($hasSubmittedPrice) {
+            if ($submittedPrice !== null) {
                 continue;
             }
 
-            $hasExistingActivePrice = $product
-                ? $product->prices()
-                    ->where('sales_channel', $channel)
-                    ->where('is_active', true)
-                    ->exists()
+            $existingPriceQuery = $product
+                ? $product->prices()->where(
+                    'sales_channel',
+                    $channel
+                )
+                : null;
+
+            $hasExistingPrice = $existingPriceQuery
+                ? (
+                    $allowArchivedPrice
+                        ? $existingPriceQuery->where('price', '>', 0)->exists()
+                        : $existingPriceQuery
+                            ->where('is_active', true)
+                            ->where('price', '>', 0)
+                            ->exists()
+                )
                 : false;
 
-            if (!$hasExistingActivePrice) {
+            if (!$hasExistingPrice) {
                 $errors["prices.{$channel}"] = [
-                    "Harga {$channel} wajib diisi jika status channel AVAILABLE.",
+                    "Harga {$channel} wajib diisi jika channel tersedia.",
                 ];
             }
         }
@@ -551,7 +580,8 @@ class ProductManagementController extends Controller
     }
 
     /**
-     * Membuat slug unik untuk produk.
+     * Membuat slug produk yang unik,
+     * termasuk terhadap produk yang sudah diarsipkan.
      */
     private function generateProductSlug(
         string $name,
