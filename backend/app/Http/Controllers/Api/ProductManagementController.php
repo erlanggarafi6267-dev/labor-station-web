@@ -17,7 +17,7 @@ class ProductManagementController extends Controller
 {
     /**
      * Menampilkan daftar produk.
-     * Produk soft deleted tetap tersedia pada filter inactive/all.
+     * Produk soft deleted tersedia pada filter inactive/all.
      */
     public function index(Request $request): JsonResponse
     {
@@ -227,20 +227,53 @@ class ProductManagementController extends Controller
     /**
      * Memperbarui produk.
      *
-     * Jika produk sudah diarsipkan dan menerima is_active=true,
-     * produk akan dipulihkan menggunakan restore().
+     * Permission diperiksa berdasarkan jenis perubahan.
+     * Produk soft deleted dapat dipulihkan melalui is_active=true.
      */
     public function update(Request $request, int $id): JsonResponse
     {
+        /*
+         * Field yang boleh diterima oleh endpoint update.
+         */
+        $allowedFields = [
+            'category_id',
+            'name',
+            'sku',
+            'description',
+            'image_path',
+            'temperature_options',
+            'offline_status',
+            'grabfood_status',
+            'prices',
+            'is_active',
+        ];
+
+        /*
+         * Ambil hanya field yang dikirim pengguna.
+         */
+        $submittedFields = array_keys($request->all());
+
+        /*
+         * Tolak request kosong.
+         * Request tanpa perubahan tidak boleh menghasilkan audit log.
+         */
+        if (empty($submittedFields)) {
+            return response()->json([
+                'message' => 'Tidak ada perubahan yang dikirim.',
+            ], 422);
+        }
+
         $product = Product::withTrashed()
             ->with('prices')
             ->findOrFail($id);
 
         $isArchived = $product->trashed();
 
-        // ==================================================
-        // PERMISSION CHECK
-        // ==================================================
+        /*
+         * PERMISSION CHECK
+         *
+         * Setiap jenis perubahan memiliki izin sendiri.
+         */
 
         $permissionChecks = [];
 
@@ -267,6 +300,32 @@ class ProductManagementController extends Controller
             $permissionChecks[] = 'product.status.update';
         }
 
+        /*
+         * Request hanya boleh memuat field yang memang dikenali.
+         */
+        $unknownFields = array_diff(
+            $submittedFields,
+            $allowedFields
+        );
+
+        if (!empty($unknownFields)) {
+            return response()->json([
+                'message' => 'Request mengandung field yang tidak diizinkan.',
+                'errors' => [
+                    'fields' => array_values($unknownFields),
+                ],
+            ], 422);
+        }
+
+        /*
+         * Tidak ada izin yang cocok berarti tidak ada perubahan valid.
+         */
+        if (empty($permissionChecks)) {
+            return response()->json([
+                'message' => 'Tidak ada perubahan produk yang valid.',
+            ], 422);
+        }
+
         foreach (array_unique($permissionChecks) as $permission) {
             if (!$request->user()->hasPermission($permission)) {
                 return response()->json([
@@ -276,6 +335,10 @@ class ProductManagementController extends Controller
             }
         }
 
+        /*
+         * VALIDASI INPUT
+         */
+
         $validated = $request->validate([
             'category_id' => [
                 'sometimes',
@@ -283,7 +346,12 @@ class ProductManagementController extends Controller
                 'integer',
                 'exists:categories,id',
             ],
-            'name' => ['sometimes', 'required', 'string', 'max:150'],
+            'name' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:150',
+            ],
             'sku' => [
                 'sometimes',
                 'nullable',
@@ -291,10 +359,23 @@ class ProductManagementController extends Controller
                 'max:50',
                 Rule::unique('products', 'sku')->ignore($product->id),
             ],
-            'description' => ['sometimes', 'nullable', 'string'],
-            'image_path' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'description' => [
+                'sometimes',
+                'nullable',
+                'string',
+            ],
+            'image_path' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:255',
+            ],
 
-            'temperature_options' => ['sometimes', 'nullable', 'array'],
+            'temperature_options' => [
+                'sometimes',
+                'nullable',
+                'array',
+            ],
             'temperature_options.*' => [
                 'string',
                 'distinct',
@@ -312,7 +393,13 @@ class ProductManagementController extends Controller
                 Rule::in(['AVAILABLE', 'UNAVAILABLE']),
             ],
 
-            'prices' => ['sometimes', 'required', 'array', 'min:1', 'max:2'],
+            'prices' => [
+                'sometimes',
+                'required',
+                'array',
+                'min:1',
+                'max:2',
+            ],
             'prices.*.sales_channel' => [
                 'required',
                 Rule::in(['OFFLINE', 'GRABFOOD']),
@@ -324,9 +411,24 @@ class ProductManagementController extends Controller
                 'min:1',
             ],
 
-            'is_active' => ['sometimes', 'boolean'],
+            'is_active' => [
+                'sometimes',
+                'boolean',
+            ],
         ]);
 
+        /*
+         * Pastikan hasil validasi benar-benar berisi perubahan.
+         */
+        if (empty($validated)) {
+            return response()->json([
+                'message' => 'Tidak ada perubahan produk yang valid.',
+            ], 422);
+        }
+
+        /*
+         * Validasi kategori.
+         */
         if (isset($validated['category_id'])) {
             $category = Category::findOrFail(
                 $validated['category_id']
@@ -352,7 +454,7 @@ class ProductManagementController extends Controller
 
         /*
          * Saat restore, harga lama boleh digunakan kembali
-         * meskipun is_active pada ProductPrice sebelumnya false.
+         * meskipun status ProductPrice sebelumnya nonaktif.
          */
         $priceErrors = $this->validateAvailableChannelPrices(
             $offlineStatus,
@@ -369,6 +471,9 @@ class ProductManagementController extends Controller
             ], 422);
         }
 
+        /*
+         * PROSES UPDATE DALAM DATABASE TRANSACTION
+         */
         $updatedProduct = DB::transaction(function () use (
             $product,
             $validated,
@@ -394,7 +499,7 @@ class ProductManagementController extends Controller
             }
 
             /*
-             * Pulihkan record soft deleted terlebih dahulu.
+             * Pulihkan soft deleted record terlebih dahulu.
              */
             if ($willRestore) {
                 $product->restore();
@@ -403,7 +508,7 @@ class ProductManagementController extends Controller
             $product->update($productData);
 
             /*
-             * Sinkronisasi status harga dengan status channel.
+             * Sinkronisasi status harga OFFLINE.
              */
             if (
                 isset($validated['offline_status'])
@@ -416,6 +521,9 @@ class ProductManagementController extends Controller
                     ]);
             }
 
+            /*
+             * Sinkronisasi status harga GRABFOOD.
+             */
             if (
                 isset($validated['grabfood_status'])
                 || $willRestore
@@ -450,6 +558,9 @@ class ProductManagementController extends Controller
                 );
             }
 
+            /*
+             * Catat perubahan setelah seluruh proses berhasil.
+             */
             $this->writeAuditLog(
                 $request,
                 $willRestore ? 'RESTORE_PRODUCT' : 'UPDATE_PRODUCT',
@@ -489,8 +600,7 @@ class ProductManagementController extends Controller
                 ->toArray();
 
             /*
-             * Pertahankan offline_status dan grabfood_status
-             * agar konfigurasi channel dapat dipulihkan.
+             * Pertahankan konfigurasi status channel.
              */
             $product->update([
                 'is_active' => false,
@@ -561,7 +671,9 @@ class ProductManagementController extends Controller
             $hasExistingPrice = $existingPriceQuery
                 ? (
                     $allowArchivedPrice
-                        ? $existingPriceQuery->where('price', '>', 0)->exists()
+                        ? $existingPriceQuery
+                            ->where('price', '>', 0)
+                            ->exists()
                         : $existingPriceQuery
                             ->where('is_active', true)
                             ->where('price', '>', 0)

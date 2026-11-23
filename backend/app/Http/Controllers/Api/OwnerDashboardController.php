@@ -120,9 +120,11 @@ class OwnerDashboardController extends Controller
 
         /*
         * 5. STATUS PESANAN
-        * Menghitung status transaksi pada periode terpilih.
+        * Menghitung seluruh status transaksi pada periode terpilih,
+        * termasuk transaksi CANCELLED.
         */
-        $orderStatusCounts = (clone $transactions)
+        $orderStatusCounts = Transaction::query()
+            ->whereBetween('created_at', [$start, $end])
             ->select(
                 'order_status',
                 DB::raw('COUNT(*) as total')

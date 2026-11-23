@@ -100,8 +100,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ProductManagementController::class, 'show'])
             ->middleware('permission:product.view');
 
-        Route::put('/{id}', [ProductManagementController::class, 'update'])
-            ->middleware('permission:product.update');
+        /*
+         * Permission update diperiksa secara granular
+         * di dalam ProductManagementController.
+         *
+         * product.update
+         * product.price.update
+         * product.status.update
+         *
+         * Autentikasi tetap diwajibkan oleh auth:sanctum.
+         */
+        Route::put('/{id}', [ProductManagementController::class, 'update']);
 
         Route::delete('/{id}', [ProductManagementController::class, 'destroy'])
             ->middleware('permission:product.delete');
@@ -148,11 +157,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions/{id}/payment', [PaymentController::class, 'store'])
         ->middleware('permission:transaction.payment');
 
-    // Update status pesanan
     Route::patch('/transactions/{id}/status', [OrderStatusController::class, 'update'])
         ->middleware('permission:transaction.status.update');
 
-    // GrabFood payout khusus Owner
     Route::post('/transactions/{id}/payout', [GrabFoodPayoutController::class, 'store'])
         ->middleware('role:owner');
 
@@ -187,15 +194,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:owner')->group(function () {
 
-        // Owner dashboard
         Route::get('/owner/dashboard', [OwnerDashboardController::class, 'index']);
 
-        // Audit logs
         Route::get('/owner/audit-logs', [AuditLogController::class, 'index']);
 
         Route::get('/owner/audit-logs/{id}', [AuditLogController::class, 'show']);
 
-        // User permissions
         Route::get('/owner/users', [UserPermissionController::class, 'index']);
 
         Route::get(

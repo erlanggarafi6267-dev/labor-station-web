@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -78,6 +79,28 @@ class UserPermissionControllerTest extends TestCase
             'permission_id' => $permission->id,
             'granted_by' => $owner->id,
         ]);
+
+        $audit = AuditLog::query()
+            ->where('action', 'UPDATE_USER_PERMISSIONS')
+            ->where('entity_type', 'USER')
+            ->where('entity_id', $staff->id)
+            ->first();
+
+        $this->assertNotNull($audit);
+        $this->assertSame($owner->id, $audit->user_id);
+        $this->assertSame([], $audit->metadata['permissions']['before']);
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['after']
+        );
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['granted']
+        );
+        $this->assertSame(
+            [],
+            $audit->metadata['permissions']['revoked']
+        );
     }
 
     public function test_owner_can_revoke_all_permissions_from_staff(): void
@@ -106,6 +129,112 @@ class UserPermissionControllerTest extends TestCase
         ]);
 
         $this->assertDatabaseCount('user_permissions', 0);
+
+        $audit = AuditLog::query()
+            ->where('action', 'REVOKE_USER_PERMISSIONS')
+            ->where('entity_type', 'USER')
+            ->where('entity_id', $staff->id)
+            ->first();
+
+        $this->assertNotNull($audit);
+        $this->assertSame($owner->id, $audit->user_id);
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['before']
+        );
+        $this->assertSame(
+            [],
+            $audit->metadata['permissions']['after']
+        );
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['revoked']
+        );
+    }
+
+    public function test_owner_can_replace_permissions_and_audit_both_changes(): void
+    {
+        $ownerRole = $this->createRole('owner');
+        $staffRole = $this->createRole('staff');
+
+        $owner = $this->createUser($ownerRole, 'owner@example.com');
+        $staff = $this->createUser($staffRole, 'staff@example.com');
+
+        $oldPermission = $this->createPermission('product.view');
+        $newPermission = $this->createPermission('product.update');
+
+        $staff->permissions()->attach($oldPermission->id, [
+            'granted_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner, 'sanctum')
+            ->putJson("/api/owner/users/{$staff->id}/permissions", [
+                'permissions' => ['product.update'],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('user_permissions', [
+            'user_id' => $staff->id,
+            'permission_id' => $oldPermission->id,
+        ]);
+
+        $this->assertDatabaseHas('user_permissions', [
+            'user_id' => $staff->id,
+            'permission_id' => $newPermission->id,
+            'granted_by' => $owner->id,
+        ]);
+
+        $audit = AuditLog::query()
+            ->where('action', 'UPDATE_USER_PERMISSIONS')
+            ->where('entity_id', $staff->id)
+            ->first();
+
+        $this->assertNotNull($audit);
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['before']
+        );
+        $this->assertSame(
+            ['product.update'],
+            $audit->metadata['permissions']['after']
+        );
+        $this->assertSame(
+            ['product.update'],
+            $audit->metadata['permissions']['granted']
+        );
+        $this->assertSame(
+            ['product.view'],
+            $audit->metadata['permissions']['revoked']
+        );
+    }
+
+    public function test_unchanged_permissions_do_not_create_duplicate_audit(): void
+    {
+        $ownerRole = $this->createRole('owner');
+        $staffRole = $this->createRole('staff');
+
+        $owner = $this->createUser($ownerRole, 'owner@example.com');
+        $staff = $this->createUser($staffRole, 'staff@example.com');
+
+        $permission = $this->createPermission('product.view');
+
+        $staff->permissions()->attach($permission->id, [
+            'granted_by' => $owner->id,
+        ]);
+
+        $this->actingAs($owner, 'sanctum')
+            ->putJson("/api/owner/users/{$staff->id}/permissions", [
+                'permissions' => ['product.view'],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseCount('audit_logs', 0);
+
+        $this->assertDatabaseHas('user_permissions', [
+            'user_id' => $staff->id,
+            'permission_id' => $permission->id,
+            'granted_by' => $owner->id,
+        ]);
     }
 
     public function test_owner_cannot_modify_another_owner_permissions(): void

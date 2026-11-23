@@ -14,101 +14,83 @@ use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
-
-    /**
- * Mengubah status pesanan.
- */
-public function updateStatus(Request $request, string $id): JsonResponse
-{
-    $validated = $request->validate([
-        'order_status' => [
-            'required',
-            'in:NEW,PROCESSING,READY,COMPLETED,CANCELLED',
-        ],
-    ]);
-
-    $transaction = Transaction::findOrFail($id);
-
-    $currentStatus = $transaction->order_status;
-    $newStatus = $validated['order_status'];
-
-    $allowedTransitions = [
-        'NEW' => ['PROCESSING', 'CANCELLED'],
-        'PROCESSING' => ['READY', 'CANCELLED'],
-        'READY' => ['COMPLETED'],
-        'COMPLETED' => [],
-        'CANCELLED' => [],
-    ];
-
-    if (!in_array(
-        $newStatus,
-        $allowedTransitions[$currentStatus] ?? [],
-        true
-    )) {
-        return response()->json([
-            'message' => "Status tidak dapat diubah dari {$currentStatus} menjadi {$newStatus}.",
-        ], 422);
-    }
-
-    if ($newStatus === 'CANCELLED' &&
-        $transaction->payment_status === 'PAID') {
-        return response()->json([
-            'message' => 'Transaksi yang sudah lunas tidak dapat dibatalkan melalui fitur ini.',
-        ], 422);
-    }
-
-    $transaction->update([
-        'order_status' => $newStatus,
-    ]);
-
-    return response()->json([
-        'message' => 'Status pesanan berhasil diperbarui.',
-        'data' => $transaction->fresh(),
-    ]);
-}
-
     /**
      * Menampilkan daftar transaksi.
      */
     public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'sales_channel' => [
+                'nullable',
+                'in:OFFLINE,GRABFOOD',
+            ],
+            'order_status' => [
+                'nullable',
+                'in:NEW,PREPARING,READY,COMPLETED,CANCELLED',
+            ],
+            'payment_status' => [
+                'nullable',
+                'in:UNPAID,PAID',
+            ],
+            'search' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+            'per_page' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
+        ]);
+
         $transactions = Transaction::query()
             ->with(['items', 'payment'])
             ->when(
-                $request->filled('sales_channel'),
+                !empty($validated['sales_channel']),
                 fn ($query) => $query->where(
                     'sales_channel',
-                    $request->input('sales_channel')
+                    $validated['sales_channel']
                 )
             )
             ->when(
-                $request->filled('order_status'),
+                !empty($validated['order_status']),
                 fn ($query) => $query->where(
                     'order_status',
-                    $request->input('order_status')
+                    $validated['order_status']
                 )
             )
             ->when(
-                $request->filled('payment_status'),
+                !empty($validated['payment_status']),
                 fn ($query) => $query->where(
                     'payment_status',
-                    $request->input('payment_status')
+                    $validated['payment_status']
                 )
             )
             ->when(
-                $request->filled('search'),
-                function ($query) use ($request) {
-                    $search = $request->input('search');
+                !empty($validated['search']),
+                function ($query) use ($validated) {
+                    $search = $validated['search'];
 
                     $query->where(function ($subQuery) use ($search) {
                         $subQuery
-                            ->where('invoice_number', 'ILIKE', "%{$search}%")
-                            ->orWhere('customer_name', 'ILIKE', "%{$search}%");
+                            ->where(
+                                'invoice_number',
+                                'ILIKE',
+                                "%{$search}%"
+                            )
+                            ->orWhere(
+                                'customer_name',
+                                'ILIKE',
+                                "%{$search}%"
+                            );
                     });
                 }
             )
             ->latest()
-            ->paginate(15);
+            ->paginate($validated['per_page'] ?? 15)
+            ->withQueryString();
 
         return response()->json([
             'message' => 'Daftar transaksi berhasil diambil.',
@@ -135,11 +117,17 @@ public function updateStatus(Request $request, string $id): JsonResponse
 
     /**
      * Membuat transaksi baru.
+     *
+     * Semua harga katalog diambil dari database.
+     * Harga item manual tetap dihitung oleh backend.
      */
     public function store(Request $request): JsonResponse
     {
-        // Kompatibilitas dengan request lama.
-        // Item dengan product_id otomatis dianggap CATALOG.
+        /*
+         * Kompatibilitas dengan request lama.
+         * Item dengan product_id dianggap CATALOG.
+         * Item tanpa product_id dianggap MANUAL.
+         */
         $items = $request->input('items', []);
 
         if (is_array($items)) {
@@ -160,6 +148,14 @@ public function updateStatus(Request $request, string $id): JsonResponse
             ]);
         }
 
+        /*
+         * Validasi request.
+         *
+         * Batas teknis:
+         * Harga satuan maksimal Rp1.000.000.000.
+         * Kuantitas maksimal 10.000 per item.
+         * Maksimal 100 baris item per transaksi.
+         */
         $validated = $request->validate([
             'customer_name' => [
                 'nullable',
@@ -175,12 +171,14 @@ public function updateStatus(Request $request, string $id): JsonResponse
             'notes' => [
                 'nullable',
                 'string',
+                'max:5000',
             ],
 
             'items' => [
                 'required',
                 'array',
                 'min:1',
+                'max:100',
             ],
 
             'items.*.item_type' => [
@@ -207,12 +205,14 @@ public function updateStatus(Request $request, string $id): JsonResponse
                 'nullable',
                 'integer',
                 'min:1',
+                'max:1000000000',
             ],
 
             'items.*.quantity' => [
                 'required',
                 'integer',
                 'min:1',
+                'max:10000',
             ],
 
             'items.*.temperature' => [
@@ -221,6 +221,10 @@ public function updateStatus(Request $request, string $id): JsonResponse
             ],
         ]);
 
+        /*
+         * Seluruh proses transaksi berada di dalam database
+         * transaction agar data tidak tersimpan setengah jalan.
+         */
         $transaction = DB::transaction(function () use (
             $validated,
             $request
@@ -235,14 +239,36 @@ public function updateStatus(Request $request, string $id): JsonResponse
                  * ITEM KATALOG
                  */
                 if ($item['item_type'] === 'CATALOG') {
+                    /*
+                     * Kunci baris produk selama transaksi.
+                     * Ini membantu mencegah perubahan status produk
+                     * bersamaan dengan proses penjualan.
+                     */
                     $product = Product::query()
                         ->where('is_active', true)
+                        ->lockForUpdate()
                         ->find($item['product_id']);
 
                     if (!$product) {
                         throw ValidationException::withMessages([
                             "items.{$index}.product_id" => [
                                 'Produk tidak ditemukan atau sedang tidak aktif.',
+                            ],
+                        ]);
+                    }
+
+                    /*
+                     * VALIDASI STATUS CHANNEL
+                     */
+                    $channelStatus = $validated['sales_channel']
+                        === 'OFFLINE'
+                            ? $product->offline_status
+                            : $product->grabfood_status;
+
+                    if ($channelStatus !== 'AVAILABLE') {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.product_id" => [
+                                'Produk tidak tersedia untuk channel penjualan ini.',
                             ],
                         ]);
                     }
@@ -308,9 +334,24 @@ public function updateStatus(Request $request, string $id): JsonResponse
                         ]);
                     }
 
+                    $unitPrice = (int) $price->price;
+
+                    /*
+                     * Validasi harga katalog dari database.
+                     */
+                    if (
+                        $unitPrice < 1 ||
+                        $unitPrice > 1000000000
+                    ) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.product_id" => [
+                                'Harga produk berada di luar batas yang diizinkan.',
+                            ],
+                        ]);
+                    }
+
                     $productId = $product->id;
                     $productName = $product->name;
-                    $unitPrice = (int) $price->price;
                 }
 
                 /*
@@ -335,8 +376,24 @@ public function updateStatus(Request $request, string $id): JsonResponse
                  */
                 $quantity = (int) $item['quantity'];
 
+                /*
+                 * Periksa overflow sebelum perkalian.
+                 */
+                if (
+                    $unitPrice > intdiv(PHP_INT_MAX, $quantity)
+                ) {
+                    throw ValidationException::withMessages([
+                        'items' => [
+                            'Subtotal item terlalu besar untuk diproses.',
+                        ],
+                    ]);
+                }
+
                 $lineSubtotal = $unitPrice * $quantity;
 
+                /*
+                 * Periksa overflow sebelum penjumlahan.
+                 */
                 if (
                     $lineSubtotal > PHP_INT_MAX - $subtotal
                 ) {
@@ -380,6 +437,10 @@ public function updateStatus(Request $request, string $id): JsonResponse
                 'net_payout' => null,
                 'payout_date' => null,
 
+                /*
+                 * Identitas kasir diambil dari autentikasi.
+                 * Tidak menerima user_id dari request.
+                 */
                 'user_id' => $request->user()->id,
 
                 'customer_name' =>

@@ -69,6 +69,11 @@ type ApiError = {
   errors?: Record<string, string[]>;
 };
 
+type ApiResult = ApiError & {
+  data?: any;
+  user?: AuthUser;
+};
+
 const emptyForm: ProductForm = {
   category_id: "",
   name: "",
@@ -135,6 +140,8 @@ export default function ProductsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [actionLoadingId, setActionLoadingId] =
+    useState<number | null>(null);
 
   const [authChecking, setAuthChecking] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
@@ -156,7 +163,10 @@ export default function ProductsPage() {
   // =====================================================
 
   const request = useCallback(
-    async (path: string, options: RequestInit = {}) => {
+    async (
+      path: string,
+      options: RequestInit = {}
+    ): Promise<ApiResult> => {
       const response = await apiRequest(path, options);
 
       if (response.status === 401) {
@@ -164,9 +174,9 @@ export default function ProductsPage() {
         throw new Error("Sesi login telah berakhir.");
       }
 
-      const result: ApiError & {
-        data?: any;
-      } = await response.json().catch(() => ({}));
+      const result: ApiResult = await response
+        .json()
+        .catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
@@ -184,7 +194,6 @@ export default function ProductsPage() {
 
   // =====================================================
   // VALIDASI SESSION DAN ROLE OWNER
-  // Identitas pengguna diambil dari backend.
   // =====================================================
 
   useEffect(() => {
@@ -193,19 +202,9 @@ export default function ProductsPage() {
     async function checkSession() {
       try {
         const result = await request("/me");
+        const user = result.user;
 
-    const responseData = result as unknown as {
-      user?: AuthUser;
-    };
-
-const user = responseData.user;
-
-        if (!user || !user.id) {
-          window.location.replace("/");
-          return;
-        }
-
-        if (user.role !== "owner") {
+        if (!user || !user.id || user.role !== "owner") {
           window.location.replace("/");
           return;
         }
@@ -319,7 +318,6 @@ const user = responseData.user;
     }
   }, [fetchProducts, fetchCategories]);
 
-  // Ambil data hanya setelah session owner tervalidasi.
   useEffect(() => {
     if (authenticated) {
       refreshData();
@@ -426,32 +424,32 @@ const user = responseData.user;
 
     if (
       form.offline_status === "AVAILABLE" &&
-      (!Number.isFinite(offlinePrice) || offlinePrice <= 0)
+      (!Number.isSafeInteger(offlinePrice) || offlinePrice <= 0)
     ) {
       throw new Error(
-        "Harga OFFLINE wajib diisi jika channel tersedia."
+        "Harga OFFLINE wajib berupa bilangan bulat lebih dari nol."
       );
     }
 
     if (
       form.grabfood_status === "AVAILABLE" &&
-      (!Number.isFinite(grabfoodPrice) || grabfoodPrice <= 0)
+      (!Number.isSafeInteger(grabfoodPrice) || grabfoodPrice <= 0)
     ) {
       throw new Error(
-        "Harga GRABFOOD wajib diisi jika channel tersedia."
+        "Harga GRABFOOD wajib berupa bilangan bulat lebih dari nol."
       );
     }
 
     if (
       form.offline_price.trim() !== "" &&
-      (!Number.isFinite(offlinePrice) || offlinePrice < 0)
+      (!Number.isSafeInteger(offlinePrice) || offlinePrice < 0)
     ) {
       throw new Error("Harga OFFLINE tidak valid.");
     }
 
     if (
       form.grabfood_price.trim() !== "" &&
-      (!Number.isFinite(grabfoodPrice) || grabfoodPrice < 0)
+      (!Number.isSafeInteger(grabfoodPrice) || grabfoodPrice < 0)
     ) {
       throw new Error("Harga GRABFOOD tidak valid.");
     }
@@ -524,7 +522,6 @@ const user = responseData.user;
           : "Produk berhasil diperbarui.";
 
       resetForm();
-
       setSuccess(successMessage);
 
       await refreshData();
@@ -544,12 +541,15 @@ const user = responseData.user;
   // =====================================================
 
   async function deleteProduct(product: Product) {
+    if (actionLoadingId !== null) return;
+
     const confirmed = window.confirm(
       `Arsipkan produk "${product.name}"?\n\nProduk akan dinonaktifkan dan tidak dihapus dari riwayat transaksi.`
     );
 
     if (!confirmed) return;
 
+    setActionLoadingId(product.id);
     setError("");
     setSuccess("");
 
@@ -569,12 +569,54 @@ const user = responseData.user;
           ? err.message
           : "Gagal mengarsipkan produk."
       );
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  // =====================================================
+  // AKTIFKAN KEMBALI PRODUK
+  // =====================================================
+
+  async function restoreProduct(product: Product) {
+    if (actionLoadingId !== null) return;
+
+    const confirmed = window.confirm(
+      `Aktifkan kembali produk "${product.name}"?\n\nProduk akan dipulihkan dengan konfigurasi channel sebelumnya.`
+    );
+
+    if (!confirmed) return;
+
+    setActionLoadingId(product.id);
+    setError("");
+    setSuccess("");
+
+    try {
+      await request(`/owner/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          is_active: true,
+        }),
+      });
+
+      setSuccess(
+        `Produk "${product.name}" berhasil diaktifkan kembali.`
+      );
+
+      await refreshData();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Gagal mengaktifkan kembali produk."
+      );
+    } finally {
+      setActionLoadingId(null);
     }
   }
 
   // =====================================================
   // LOGOUT
-  // Mengakhiri session di backend.
   // =====================================================
 
   async function handleLogout() {
@@ -613,8 +655,6 @@ const user = responseData.user;
 
   return (
     <main className="min-h-screen bg-[#f5eee6] text-[#392619]">
-      {/* SIDEBAR */}
-
       <aside className="fixed inset-y-0 left-0 hidden w-[250px] flex-col bg-[#302016] text-[#fff5e9] lg:flex">
         <div className="border-b border-white/10 px-6 py-7">
           <h1 className="text-lg font-black tracking-wide">
@@ -670,11 +710,7 @@ const user = responseData.user;
         </div>
       </aside>
 
-      {/* KONTEN UTAMA */}
-
       <div className="lg:ml-[250px]">
-        {/* HEADER */}
-
         <header className="flex h-[76px] items-center justify-between border-b border-[#e8d9ca] bg-[#fffaf4] px-5 sm:px-8">
           <div>
             <p className="text-xs text-[#92775f]">
@@ -701,8 +737,6 @@ const user = responseData.user;
         </header>
 
         <div className="mx-auto max-w-[1450px] space-y-7 p-4 sm:p-7 lg:p-9">
-          {/* JUDUL */}
-
           <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#9b795b]">
@@ -728,8 +762,6 @@ const user = responseData.user;
               + Tambah Produk
             </button>
           </section>
-
-          {/* NOTIFIKASI HALAMAN */}
 
           {error && (
             <div
@@ -766,8 +798,6 @@ const user = responseData.user;
               </button>
             </div>
           )}
-
-          {/* RINGKASAN */}
 
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
@@ -811,11 +841,7 @@ const user = responseData.user;
             ))}
           </section>
 
-          {/* TABEL PRODUK */}
-
           <section className="overflow-hidden rounded-2xl border border-[#eadccf] bg-[#fffaf4] shadow-sm">
-            {/* FILTER */}
-
             <div className="flex flex-col gap-3 border-b border-[#eadccf] p-5 lg:flex-row">
               <input
                 value={search}
@@ -860,8 +886,6 @@ const user = responseData.user;
                 <option value="all">Semua Status</option>
               </select>
             </div>
-
-            {/* TABEL */}
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] text-left text-sm">
@@ -985,20 +1009,37 @@ const user = responseData.user;
                               onClick={() =>
                                 openEditProduct(product)
                               }
-                              className="rounded-lg border border-[#ddc9b5] px-3 py-2 text-xs font-bold text-[#543923] hover:bg-[#f5eee6]"
+                              disabled={actionLoadingId !== null}
+                              className="rounded-lg border border-[#ddc9b5] px-3 py-2 text-xs font-bold text-[#543923] hover:bg-[#f5eee6] disabled:opacity-50"
                             >
                               Edit
                             </button>
 
-                            {product.is_active && (
+                            {product.is_active ? (
                               <button
                                 type="button"
                                 onClick={() =>
                                   deleteProduct(product)
                                 }
-                                className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50"
+                                disabled={actionLoadingId !== null}
+                                className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"
                               >
-                                Arsipkan
+                                {actionLoadingId === product.id
+                                  ? "Memproses..."
+                                  : "Arsipkan"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  restoreProduct(product)
+                                }
+                                disabled={actionLoadingId !== null}
+                                className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                              >
+                                {actionLoadingId === product.id
+                                  ? "Memproses..."
+                                  : "Aktifkan Kembali"}
                               </button>
                             )}
                           </div>
@@ -1009,8 +1050,6 @@ const user = responseData.user;
                 </tbody>
               </table>
             </div>
-
-            {/* PAGINATION */}
 
             <div className="flex flex-col justify-between gap-3 border-t border-[#eadccf] p-5 sm:flex-row sm:items-center">
               <p className="text-xs text-[#92775f]">
@@ -1062,8 +1101,6 @@ const user = responseData.user;
         </div>
       </div>
 
-      {/* MODAL TAMBAH / EDIT PRODUK */}
-
       {modalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
           <div
@@ -1072,8 +1109,6 @@ const user = responseData.user;
             aria-labelledby="product-modal-title"
             className="my-6 w-full max-w-2xl overflow-hidden rounded-2xl bg-[#fffaf4] shadow-2xl"
           >
-            {/* HEADER MODAL */}
-
             <div className="flex items-center justify-between border-b border-[#eadccf] px-6 py-5">
               <div>
                 <h2
@@ -1100,8 +1135,6 @@ const user = responseData.user;
                 ×
               </button>
             </div>
-
-            {/* ERROR MODAL */}
 
             {modalError && (
               <div
@@ -1130,14 +1163,10 @@ const user = responseData.user;
               </div>
             )}
 
-            {/* FORM */}
-
             <form
               onSubmit={saveProduct}
               className="max-h-[75vh] space-y-5 overflow-y-auto p-6"
             >
-              {/* INFORMASI PRODUK */}
-
               <section className="space-y-4">
                 <h3 className="text-sm font-black uppercase tracking-wide text-[#80664e]">
                   Informasi Produk
@@ -1247,8 +1276,6 @@ const user = responseData.user;
 
               <div className="border-t border-[#eadccf]" />
 
-              {/* PILIHAN SUHU */}
-
               <section className="space-y-3">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wide text-[#80664e]">
@@ -1291,8 +1318,6 @@ const user = responseData.user;
               </section>
 
               <div className="border-t border-[#eadccf]" />
-
-              {/* HARGA OFFLINE */}
 
               <section className="space-y-3">
                 <h3 className="text-sm font-black uppercase tracking-wide text-[#80664e]">
@@ -1358,8 +1383,6 @@ const user = responseData.user;
 
               <div className="border-t border-[#eadccf]" />
 
-              {/* HARGA GRABFOOD */}
-
               <section className="space-y-3">
                 <h3 className="text-sm font-black uppercase tracking-wide text-[#80664e]">
                   Penjualan GRABFOOD
@@ -1422,8 +1445,6 @@ const user = responseData.user;
                 </div>
               </section>
 
-              {/* CATATAN */}
-
               <div className="rounded-xl bg-[#f5eee6] p-4 text-xs leading-relaxed text-[#80664e]">
                 <strong>Catatan:</strong> Setiap channel yang
                 berstatus Tersedia wajib memiliki harga.
@@ -1431,8 +1452,6 @@ const user = responseData.user;
                 Mengubah harga satu channel tidak mengubah
                 harga channel lainnya.
               </div>
-
-              {/* TOMBOL */}
 
               <div className="flex flex-col-reverse gap-3 border-t border-[#eadccf] pt-5 sm:flex-row sm:justify-end">
                 <button

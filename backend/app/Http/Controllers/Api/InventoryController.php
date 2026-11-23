@@ -3,25 +3,44 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class InventoryController extends Controller
 {
     /**
-     * Ringkasan dan daftar bahan baku.
+     * DECIMAL(14,3):
+     * 11 digit sebelum koma dan 3 digit sesudah koma.
+     */
+    private const MAX_STOCK_MILLI = 99999999999999;
+
+    /**
+     * Menampilkan ringkasan dan daftar bahan baku.
      */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:150'],
-            'status' => ['nullable', Rule::in(['active', 'inactive', 'all'])],
-            'stock' => ['nullable', Rule::in(['low', 'normal', 'all'])],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'status' => [
+                'nullable',
+                Rule::in(['active', 'inactive', 'all']),
+            ],
+            'stock' => [
+                'nullable',
+                Rule::in(['low', 'normal', 'all']),
+            ],
+            'per_page' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
         ]);
 
         $query = Ingredient::query()
@@ -64,12 +83,15 @@ class InventoryController extends Controller
 
         $summary = [
             'total' => Ingredient::where('is_active', true)->count(),
+
             'low_stock' => Ingredient::where('is_active', true)
                 ->whereColumn('current_stock', '<=', 'minimum_stock')
                 ->count(),
+
             'out_of_stock' => Ingredient::where('is_active', true)
                 ->where('current_stock', '<=', 0)
                 ->count(),
+
             'inactive' => Ingredient::where('is_active', false)->count(),
         ];
 
@@ -86,35 +108,86 @@ class InventoryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:150', 'unique:ingredients,name'],
-            'unit' => ['required', 'string', 'max:30'],
-            'current_stock' => ['nullable', 'numeric', 'min:0', 'max:99999999999'],
-            'minimum_stock' => ['required', 'numeric', 'min:0', 'max:99999999999'],
+            'name' => [
+                'required',
+                'string',
+                'max:150',
+                'unique:ingredients,name',
+            ],
+            'unit' => [
+                'required',
+                'string',
+                'max:30',
+            ],
+            'current_stock' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) {
+                    if (!$this->isValidStockValue($value)) {
+                        $fail(
+                            'Stok harus memiliki maksimal 11 digit sebelum koma '
+                            . 'dan 3 digit sesudah koma.'
+                        );
+                    }
+                },
+            ],
+            'minimum_stock' => [
+                'required',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) {
+                    if (!$this->isValidStockValue($value)) {
+                        $fail(
+                            'Minimum stok harus memiliki maksimal 11 digit '
+                            . 'sebelum koma dan 3 digit sesudah koma.'
+                        );
+                    }
+                },
+            ],
         ]);
 
-        $ingredient = DB::transaction(function () use ($validated, $request) {
+        $ingredient = DB::transaction(function () use (
+            $validated,
+            $request
+        ) {
+            $initialStock = $this->toMilliUnits(
+                $validated['current_stock'] ?? '0'
+            );
+
+            $minimumStock = $this->toMilliUnits(
+                $validated['minimum_stock']
+            );
+
             $ingredient = Ingredient::create([
                 'name' => trim($validated['name']),
                 'unit' => trim($validated['unit']),
-                'current_stock' => $validated['current_stock'] ?? 0,
-                'minimum_stock' => $validated['minimum_stock'],
+                'current_stock' => $this->formatMilliUnits($initialStock),
+                'minimum_stock' => $this->formatMilliUnits($minimumStock),
                 'is_active' => true,
             ]);
-
-            $initialStock = (float) ($validated['current_stock'] ?? 0);
 
             if ($initialStock > 0) {
                 StockMovement::create([
                     'ingredient_id' => $ingredient->id,
                     'user_id' => $request->user()->id,
                     'type' => 'IN',
-                    'quantity' => $initialStock,
-                    'stock_before' => 0,
-                    'stock_after' => $initialStock,
+                    'quantity' => $this->formatMilliUnits($initialStock),
+                    'stock_before' => '0.000',
+                    'stock_after' => $this->formatMilliUnits($initialStock),
                     'reason' => 'Stok awal bahan baku',
                     'movement_at' => now(),
                 ]);
             }
+
+            $this->writeAuditLog(
+                $request,
+                'CREATE_INGREDIENT',
+                $ingredient,
+                [
+                    'after' => $this->ingredientSnapshot($ingredient),
+                ]
+            );
 
             return $ingredient;
         });
@@ -127,48 +200,114 @@ class InventoryController extends Controller
 
     /**
      * Memperbarui informasi bahan baku.
-     * Perubahan stok hanya boleh melalui endpoint pergerakan stok.
+     * Perubahan stok hanya melalui endpoint pergerakan stok.
      */
     public function update(Request $request, int $id): JsonResponse
     {
-        $ingredient = Ingredient::findOrFail($id);
-
         $validated = $request->validate([
             'name' => [
                 'required',
                 'string',
                 'max:150',
-                Rule::unique('ingredients', 'name')->ignore($ingredient->id),
+                Rule::unique('ingredients', 'name')->ignore($id),
             ],
-            'unit' => ['required', 'string', 'max:30'],
-            'minimum_stock' => ['required', 'numeric', 'min:0', 'max:99999999999'],
-            'is_active' => ['required', 'boolean'],
+            'unit' => [
+                'required',
+                'string',
+                'max:30',
+            ],
+            'minimum_stock' => [
+                'required',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) {
+                    if (!$this->isValidStockValue($value)) {
+                        $fail(
+                            'Minimum stok harus memiliki maksimal 11 digit '
+                            . 'sebelum koma dan 3 digit sesudah koma.'
+                        );
+                    }
+                },
+            ],
+            'is_active' => [
+                'required',
+                'boolean',
+            ],
         ]);
 
-        $ingredient->update([
-            'name' => trim($validated['name']),
-            'unit' => trim($validated['unit']),
-            'minimum_stock' => $validated['minimum_stock'],
-            'is_active' => $validated['is_active'],
-        ]);
+        $ingredient = DB::transaction(function () use (
+            $validated,
+            $request,
+            $id
+        ) {
+            $ingredient = Ingredient::query()
+                ->lockForUpdate()
+                ->findOrFail($id);
+
+            $before = $this->ingredientSnapshot($ingredient);
+
+            $ingredient->update([
+                'name' => trim($validated['name']),
+                'unit' => trim($validated['unit']),
+                'minimum_stock' => $this->formatMilliUnits(
+                    $this->toMilliUnits($validated['minimum_stock'])
+                ),
+                'is_active' => $validated['is_active'],
+            ]);
+
+            $ingredient->refresh();
+
+            $this->writeAuditLog(
+                $request,
+                'UPDATE_INGREDIENT',
+                $ingredient,
+                [
+                    'before' => $before,
+                    'after' => $this->ingredientSnapshot($ingredient),
+                ]
+            );
+
+            return $ingredient;
+        });
 
         return response()->json([
             'message' => 'Informasi bahan baku berhasil diperbarui.',
-            'data' => $ingredient->refresh(),
+            'data' => $ingredient,
         ]);
     }
 
     /**
-     * Menonaktifkan bahan baku.
-     * Bahan tidak dihapus agar riwayat stok tetap aman.
+     * Menonaktifkan bahan baku tanpa menghapus riwayatnya.
      */
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
-        $ingredient = Ingredient::findOrFail($id);
+        DB::transaction(function () use ($request, $id) {
+            $ingredient = Ingredient::query()
+                ->lockForUpdate()
+                ->findOrFail($id);
 
-        $ingredient->update([
-            'is_active' => false,
-        ]);
+            if (!$ingredient->is_active) {
+                return;
+            }
+
+            $before = $this->ingredientSnapshot($ingredient);
+
+            $ingredient->update([
+                'is_active' => false,
+            ]);
+
+            $ingredient->refresh();
+
+            $this->writeAuditLog(
+                $request,
+                'DEACTIVATE_INGREDIENT',
+                $ingredient,
+                [
+                    'before' => $before,
+                    'after' => $this->ingredientSnapshot($ingredient),
+                ]
+            );
+        });
 
         return response()->json([
             'message' => 'Bahan baku berhasil dinonaktifkan.',
@@ -178,22 +317,46 @@ class InventoryController extends Controller
     /**
      * Mencatat stok masuk, keluar, atau penyesuaian.
      *
-     * type:
-     * IN        = stok masuk
-     * OUT       = stok keluar
-     * ADJUSTMENT = penyesuaian ke jumlah stok akhir
+     * IN         = stok masuk.
+     * OUT        = stok keluar.
+     * ADJUSTMENT = quantity menjadi stok akhir hasil hitung fisik.
      */
     public function move(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'type' => ['required', Rule::in(['IN', 'OUT', 'ADJUSTMENT'])],
+            'type' => [
+                'required',
+                Rule::in(['IN', 'OUT', 'ADJUSTMENT']),
+            ],
             'quantity' => [
                 'required',
                 'numeric',
-                'gt:0',
-                'max:99999999999',
+                'min:0',
+                function ($attribute, $value, $fail) use ($request) {
+                    if (!$this->isValidStockValue($value)) {
+                        $fail(
+                            'Jumlah stok harus memiliki maksimal 11 digit '
+                            . 'sebelum koma dan 3 digit sesudah koma.'
+                        );
+
+                        return;
+                    }
+
+                    if (
+                        $request->input('type') !== 'ADJUSTMENT'
+                        && $this->toMilliUnits($value) <= 0
+                    ) {
+                        $fail(
+                            'Jumlah stok masuk atau keluar harus lebih besar dari nol.'
+                        );
+                    }
+                },
             ],
-            'reason' => ['required', 'string', 'max:2000'],
+            'reason' => [
+                'required',
+                'string',
+                'max:2000',
+            ],
         ]);
 
         $movement = DB::transaction(function () use (
@@ -206,36 +369,75 @@ class InventoryController extends Controller
                 ->findOrFail($id);
 
             if (!$ingredient->is_active) {
-                abort(422, 'Bahan baku tidak aktif.');
+                throw ValidationException::withMessages([
+                    'ingredient' => [
+                        'Bahan baku tidak aktif.',
+                    ],
+                ]);
             }
 
-            $before = (float) $ingredient->current_stock;
-            $quantity = (float) $validated['quantity'];
+            $before = $this->toMilliUnits(
+                $ingredient->current_stock
+            );
+
+            $quantity = $this->toMilliUnits(
+                $validated['quantity']
+            );
 
             if ($validated['type'] === 'IN') {
+                if (
+                    $quantity >
+                    self::MAX_STOCK_MILLI - $before
+                ) {
+                    throw ValidationException::withMessages([
+                        'quantity' => [
+                            'Stok akhir melebihi kapasitas database.',
+                        ],
+                    ]);
+                }
+
                 $after = $before + $quantity;
             } elseif ($validated['type'] === 'OUT') {
                 if ($quantity > $before) {
-                    abort(422, 'Stok tidak mencukupi untuk pengeluaran ini.');
+                    throw ValidationException::withMessages([
+                        'quantity' => [
+                            'Stok tidak mencukupi untuk pengeluaran ini.',
+                        ],
+                    ]);
                 }
 
                 $after = $before - $quantity;
             } else {
-                // Untuk ADJUSTMENT, quantity adalah stok akhir hasil hitung fisik.
+                // Quantity pada ADJUSTMENT adalah stok akhir.
                 $after = $quantity;
             }
 
+            if (
+                $after < 0 ||
+                $after > self::MAX_STOCK_MILLI
+            ) {
+                throw ValidationException::withMessages([
+                    'quantity' => [
+                        'Hasil pergerakan stok berada di luar kapasitas database.',
+                    ],
+                ]);
+            }
+
+            $beforeFormatted = $this->formatMilliUnits($before);
+            $afterFormatted = $this->formatMilliUnits($after);
+            $quantityFormatted = $this->formatMilliUnits($quantity);
+
             $ingredient->update([
-                'current_stock' => $after,
+                'current_stock' => $afterFormatted,
             ]);
 
             return StockMovement::create([
                 'ingredient_id' => $ingredient->id,
                 'user_id' => $request->user()->id,
                 'type' => $validated['type'],
-                'quantity' => $quantity,
-                'stock_before' => $before,
-                'stock_after' => $after,
+                'quantity' => $quantityFormatted,
+                'stock_before' => $beforeFormatted,
+                'stock_after' => $afterFormatted,
                 'reason' => trim($validated['reason']),
                 'movement_at' => now(),
             ]);
@@ -251,17 +453,40 @@ class InventoryController extends Controller
     }
 
     /**
-     * Riwayat pergerakan stok.
+     * Menampilkan riwayat pergerakan stok.
      */
     public function movements(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'ingredient_id' => ['nullable', 'integer', 'exists:ingredients,id'],
-            'type' => ['nullable', Rule::in(['IN', 'OUT', 'ADJUSTMENT'])],
-            'search' => ['nullable', 'string', 'max:150'],
-            'from' => ['nullable', 'date'],
-            'to' => ['nullable', 'date', 'after_or_equal:from'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'ingredient_id' => [
+                'nullable',
+                'integer',
+                'exists:ingredients,id',
+            ],
+            'type' => [
+                'nullable',
+                Rule::in(['IN', 'OUT', 'ADJUSTMENT']),
+            ],
+            'search' => [
+                'nullable',
+                'string',
+                'max:150',
+            ],
+            'from' => [
+                'nullable',
+                'date',
+            ],
+            'to' => [
+                'nullable',
+                'date',
+                'after_or_equal:from',
+            ],
+            'per_page' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
         ]);
 
         $movements = StockMovement::query()
@@ -278,7 +503,10 @@ class InventoryController extends Controller
             )
             ->when(
                 !empty($validated['type']),
-                fn ($query) => $query->where('type', $validated['type'])
+                fn ($query) => $query->where(
+                    'type',
+                    $validated['type']
+                )
             )
             ->when(
                 !empty($validated['search']),
@@ -318,6 +546,98 @@ class InventoryController extends Controller
         return response()->json([
             'message' => 'Riwayat pergerakan stok berhasil diambil.',
             'data' => $movements,
+        ]);
+    }
+
+    /**
+     * Memastikan angka sesuai kapasitas DECIMAL(14,3).
+     */
+    private function isValidStockValue(mixed $value): bool
+    {
+        if (!is_string($value) && !is_int($value) && !is_float($value)) {
+            return false;
+        }
+
+        $value = trim((string) $value);
+
+        if (!preg_match('/^\d{1,11}(?:\.\d{1,3})?$/D', $value)) {
+            return false;
+        }
+
+        return $this->toMilliUnits($value) <= self::MAX_STOCK_MILLI;
+    }
+
+    /**
+     * Mengubah angka desimal menjadi satuan 0,001.
+     *
+     * Contoh:
+     * 12.345 menjadi 12345.
+     */
+    private function toMilliUnits(mixed $value): int
+    {
+        $value = trim((string) $value);
+
+        if (!preg_match('/^(\d{1,11})(?:\.(\d{1,3}))?$/D', $value, $matches)) {
+            throw ValidationException::withMessages([
+                'quantity' => [
+                    'Format angka stok tidak valid.',
+                ],
+            ]);
+        }
+
+        $whole = (int) $matches[1];
+        $fraction = str_pad($matches[2] ?? '', 3, '0');
+
+        return ($whole * 1000) + (int) $fraction;
+    }
+
+    /**
+     * Mengubah satuan 0,001 menjadi format desimal database.
+     */
+    private function formatMilliUnits(int $value): string
+    {
+        $whole = intdiv($value, 1000);
+        $fraction = $value % 1000;
+
+        return $whole . '.' . str_pad(
+            (string) $fraction,
+            3,
+            '0',
+            STR_PAD_LEFT
+        );
+    }
+
+    /**
+     * Snapshot informasi bahan untuk audit log.
+     */
+    private function ingredientSnapshot(Ingredient $ingredient): array
+    {
+        return [
+            'id' => $ingredient->id,
+            'name' => $ingredient->name,
+            'unit' => $ingredient->unit,
+            'current_stock' => $ingredient->current_stock,
+            'minimum_stock' => $ingredient->minimum_stock,
+            'is_active' => $ingredient->is_active,
+        ];
+    }
+
+    /**
+     * Mencatat aktivitas ke audit log.
+     */
+    private function writeAuditLog(
+        Request $request,
+        string $action,
+        Ingredient $ingredient,
+        array $metadata = []
+    ): void {
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => $action,
+            'entity_type' => 'INGREDIENT',
+            'entity_id' => $ingredient->id,
+            'metadata' => $metadata,
+            'created_at' => now(),
         ]);
     }
 }
