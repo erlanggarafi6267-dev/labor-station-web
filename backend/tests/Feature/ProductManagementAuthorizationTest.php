@@ -320,4 +320,162 @@ class ProductManagementAuthorizationTest extends TestCase
             'action' => 'RESTORE_PRODUCT',
         ]);
     }
+
+
+public function test_deactivating_product_deactivates_all_channel_prices(): void
+{
+    $user = $this->createUser(
+        'staff',
+        'staff-deactivate-product@example.com'
+    );
+
+    $this->grantPermission($user, 'product.status.update');
+
+    $product = $this->createProduct();
+
+    $response = $this->actingAs($user, 'sanctum')
+        ->putJson("/api/owner/products/{$product->id}", [
+            'is_active' => false,
+        ]);
+
+    $response->assertOk();
+
+    $this->assertDatabaseHas('products', [
+        'id' => $product->id,
+        'is_active' => false,
+    ]);
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'OFFLINE',
+        'is_active' => false,
+    ]);
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'GRABFOOD',
+        'is_active' => false,
+    ]);
+
+    $this->assertDatabaseHas('audit_logs', [
+        'entity_type' => 'PRODUCT',
+        'entity_id' => $product->id,
+        'action' => 'UPDATE_PRODUCT',
+    ]);
+}
+
+public function test_reactivating_product_synchronizes_channel_prices(): void
+{
+    $user = $this->createUser(
+        'staff',
+        'staff-reactivate-product@example.com'
+    );
+
+    $this->grantPermission($user, 'product.status.update');
+
+    $product = $this->createProduct();
+
+    $product->update([
+        'is_active' => false,
+        'offline_status' => 'AVAILABLE',
+        'grabfood_status' => 'UNAVAILABLE',
+    ]);
+
+    $product->prices()->update([
+        'is_active' => false,
+    ]);
+
+    $response = $this->actingAs($user, 'sanctum')
+        ->putJson("/api/owner/products/{$product->id}", [
+            'is_active' => true,
+        ]);
+
+    $response->assertOk();
+
+    $this->assertDatabaseHas('products', [
+        'id' => $product->id,
+        'is_active' => true,
+        'offline_status' => 'AVAILABLE',
+        'grabfood_status' => 'UNAVAILABLE',
+    ]);
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'OFFLINE',
+        'price' => 5000,
+        'is_active' => true,
+    ]);
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'GRABFOOD',
+        'price' => 7000,
+        'is_active' => false,
+    ]);
+}
+
+public function test_product_price_above_postgresql_bigint_limit_is_rejected(): void
+{
+    $user = $this->createUser(
+        'staff',
+        'staff-bigint-price@example.com'
+    );
+
+    $this->grantPermission($user, 'product.price.update');
+
+    $product = $this->createProduct();
+
+    $response = $this->actingAs($user, 'sanctum')
+        ->putJson("/api/owner/products/{$product->id}", [
+            'prices' => [
+                [
+                    'sales_channel' => 'OFFLINE',
+                    'price' => '9223372036854775808',
+                ],
+            ],
+        ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors('prices.0.price');
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'OFFLINE',
+        'price' => 5000,
+        'is_active' => true,
+    ]);
+}
+
+public function test_updating_channel_status_preserves_other_channel_price(): void
+{
+    $user = $this->createUser(
+        'staff',
+        'staff-channel-status@example.com'
+    );
+
+    $this->grantPermission($user, 'product.status.update');
+
+    $product = $this->createProduct();
+
+    $response = $this->actingAs($user, 'sanctum')
+        ->putJson("/api/owner/products/{$product->id}", [
+            'grabfood_status' => 'UNAVAILABLE',
+        ]);
+
+    $response->assertOk();
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'OFFLINE',
+        'price' => 5000,
+        'is_active' => true,
+    ]);
+
+    $this->assertDatabaseHas('product_prices', [
+        'product_id' => $product->id,
+        'sales_channel' => 'GRABFOOD',
+        'price' => 7000,
+        'is_active' => false,
+    ]);
+}
 }
