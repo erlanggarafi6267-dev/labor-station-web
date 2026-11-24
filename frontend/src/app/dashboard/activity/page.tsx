@@ -289,9 +289,15 @@ async function getCsrfToken(): Promise<string> {
     }
     }, [page, search, dateFrom, dateTo, action]);
 
+
     useEffect(() => {
-        if (user) fetchLogs();
+        if (!user) return;
+
+        queueMicrotask(() => {
+            void fetchLogs();
+        });
     }, [user, fetchLogs]);
+
 
     function handleSearch(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();

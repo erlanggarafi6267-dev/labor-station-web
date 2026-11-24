@@ -77,12 +77,28 @@ const rupiah = (value: number) =>
     maximumFractionDigits: 0,
   }).format(Number(value || 0));
 
-const getError = (result: any, fallback: string) => {
-  if (result?.errors) {
-    return Object.values(result.errors).flat().join(" ");
+type ApiErrorResponse = {
+  message?: string;
+  errors?: Record<string, string[]>;
+};
+
+const getError = (result: unknown, fallback: string): string => {
+  if (
+    typeof result !== "object" ||
+    result === null
+  ) {
+    return fallback;
   }
 
-  return result?.message || fallback;
+  const payload = result as ApiErrorResponse;
+
+  if (payload.errors) {
+    return Object.values(payload.errors)
+      .flat()
+      .join(" ");
+  }
+
+  return payload.message || fallback;
 };
 
 const escapeHtml = (value: unknown) =>
@@ -183,7 +199,9 @@ export default function TransactionsPage() {
   }, [channel]);
 
   useEffect(() => {
-    loadProducts();
+    queueMicrotask(() => {
+      void loadProducts();
+    });
   }, [loadProducts]);
 
   const getPrice = (product: Product) => {

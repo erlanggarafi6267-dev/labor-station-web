@@ -291,11 +291,15 @@ export default function InventoryPage() {
   // FETCH DATA SETELAH LOGIN TERVERIFIKASI
   // =====================================================
 
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    refreshData();
+    queueMicrotask(() => {
+        void refreshData();
+    });
   }, [isAuthenticated, refreshData]);
+
 
   // =====================================================
   // FORM BAHAN BAKU

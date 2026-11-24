@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\OrderStatusController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\GrabFoodPayoutController;
 use App\Http\Controllers\Api\OwnerDashboardController;
+use App\Http\Controllers\Api\OwnerDashboardPreferenceController;
 use App\Http\Controllers\Api\ProductCatalogController;
 use App\Http\Controllers\Api\ProductManagementController;
 use App\Http\Controllers\Api\CategoryController;
@@ -110,6 +111,7 @@ Route::middleware('auth:sanctum')->group(function () {
          *
          * Autentikasi tetap diwajibkan oleh auth:sanctum.
          */
+
         Route::put('/{id}', [ProductManagementController::class, 'update']);
 
         Route::delete('/{id}', [ProductManagementController::class, 'destroy'])
@@ -194,11 +196,41 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:owner')->group(function () {
 
+        /*
+        |--------------------------------------------------------------------------
+        | OWNER DASHBOARD
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/owner/dashboard', [OwnerDashboardController::class, 'index']);
+
+        Route::get(
+            '/owner/dashboard/preferences',
+            [OwnerDashboardPreferenceController::class, 'show']
+        );
+
+        Route::put(
+            '/owner/dashboard/preferences',
+            [OwnerDashboardPreferenceController::class, 'update']
+        );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AUDIT LOGS
+        |--------------------------------------------------------------------------
+        */
 
         Route::get('/owner/audit-logs', [AuditLogController::class, 'index']);
 
         Route::get('/owner/audit-logs/{id}', [AuditLogController::class, 'show']);
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | USER PERMISSION MANAGEMENT
+        |--------------------------------------------------------------------------
+        */
 
         Route::get('/owner/users', [UserPermissionController::class, 'index']);
 

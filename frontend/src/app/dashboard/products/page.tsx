@@ -69,8 +69,8 @@ type ApiError = {
   errors?: Record<string, string[]>;
 };
 
-type ApiResult = ApiError & {
-  data?: any;
+type ApiResult<T = unknown> = ApiError & {
+  data?: T[] | Paginated<T>;
   user?: AuthUser;
 };
 
@@ -163,18 +163,17 @@ export default function ProductsPage() {
   // =====================================================
 
   const request = useCallback(
-    async (
+    async <T = unknown,>(
       path: string,
       options: RequestInit = {}
-    ): Promise<ApiResult> => {
+    ): Promise<ApiResult<T>> => {
       const response = await apiRequest(path, options);
 
       if (response.status === 401) {
         window.location.replace("/");
         throw new Error("Sesi login telah berakhir.");
       }
-
-      const result: ApiResult = await response
+      const result: ApiResult<T> = await response
         .json()
         .catch(() => ({}));
 
@@ -236,12 +235,13 @@ export default function ProductsPage() {
   // =====================================================
 
   const fetchCategories = useCallback(async () => {
-    const result = await request("/owner/categories");
+    const result = await request<Category>("/owner/categories");
 
-    const categoryData =
-      result.data?.data ??
-      result.data ??
-      [];
+  const categoryPayload = result.data;
+
+  const categoryData = Array.isArray(categoryPayload)
+    ? categoryPayload
+    : categoryPayload?.data ?? [];
 
     setCategories(
       Array.isArray(categoryData)
@@ -268,7 +268,7 @@ export default function ProductsPage() {
       params.set("category_id", categoryFilter);
     }
 
-    const result = await request(
+    const result = await request<Product>(
       `/owner/products?${params.toString()}`
     );
 
@@ -318,11 +318,15 @@ export default function ProductsPage() {
     }
   }, [fetchProducts, fetchCategories]);
 
+
   useEffect(() => {
-    if (authenticated) {
-      refreshData();
-    }
+    if (!authenticated) return;
+
+    queueMicrotask(() => {
+      void refreshData();
+    });
   }, [authenticated, refreshData]);
+
 
   // =====================================================
   // FORM PRODUK

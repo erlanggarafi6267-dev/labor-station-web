@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const API_URL = (
     process.env.NEXT_PUBLIC_API_URL ||
@@ -181,6 +182,7 @@ async function readResponse(response: Response) {
 }
 
 export default function TransactionHistoryPage() {
+  const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pagination, setPagination] =
     useState<Pagination>(EMPTY_PAGINATION);
@@ -272,9 +274,13 @@ export default function TransactionHistoryPage() {
     search,
   ]);
 
+
   useEffect(() => {
-    void fetchTransactions();
+    queueMicrotask(() => {
+      void fetchTransactions();
+    });
   }, [fetchTransactions]);
+
 
   const paidCount = useMemo(
     () =>
@@ -511,9 +517,7 @@ function closeDetail() {
           <div className="flex items-center justify-between gap-4">
             <button
               type="button"
-              onClick={() => {
-                window.location.href = "/dashboard";
-              }}
+            onClick={() => router.push("/dashboard")}
               className="inline-flex items-center gap-2 rounded-xl border border-[#eadccf] bg-[#fffaf4] px-4 py-2.5 text-sm font-semibold text-[#543923] transition hover:bg-[#f1e6da]"
             >
               <span>←</span>
