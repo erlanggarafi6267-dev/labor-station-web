@@ -106,6 +106,7 @@ class TransactionController extends Controller
         $transaction = Transaction::with([
             'items.product',
             'payment',
+            'refund.processor:id,name',
             'user',
         ])->findOrFail($id);
 
