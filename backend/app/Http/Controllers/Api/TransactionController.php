@@ -46,7 +46,7 @@ class TransactionController extends Controller
         ]);
 
         $transactions = Transaction::query()
-            ->with(['items', 'payment'])
+            ->with(['items', 'payment', 'refund'])
             ->when(
                 !empty($validated['sales_channel']),
                 fn ($query) => $query->where(
