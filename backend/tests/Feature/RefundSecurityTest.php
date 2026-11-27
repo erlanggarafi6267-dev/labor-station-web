@@ -68,7 +68,7 @@ class RefundSecurityTest extends TestCase
     public function test_cashier_can_refund_paid_offline_transaction_and_original_payment_is_preserved(): void
     {
         $cashier = $this->createCashier('refund-success@example.com');
-        $transaction = $this->createPaidTransaction($cashier, method: 'QRIS');
+        $transaction = $this->createPaidTransaction($cashier, orderStatus: 'NEW', method: 'QRIS');
 
         $response = $this->actingAs($cashier, 'sanctum')
             ->postJson("/api/transactions/{$transaction->id}/refund", [
@@ -98,6 +98,8 @@ class RefundSecurityTest extends TestCase
             'payment_status' => 'REFUNDED',
             'order_status' => 'COMPLETED',
         ]);
+
+        $this->assertDatabaseCount('stock_movements', 0);
 
         $this->assertDatabaseHas('audit_logs', [
             'user_id' => $cashier->id,
