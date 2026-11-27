@@ -30,7 +30,7 @@ class TransactionController extends Controller
             ],
             'payment_status' => [
                 'nullable',
-                'in:UNPAID,PAID',
+                'in:UNPAID,PAID,REFUNDED',
             ],
             'search' => [
                 'nullable',
@@ -46,7 +46,7 @@ class TransactionController extends Controller
         ]);
 
         $transactions = Transaction::query()
-            ->with(['items', 'payment'])
+            ->with(['items', 'payment', 'refund'])
             ->when(
                 !empty($validated['sales_channel']),
                 fn ($query) => $query->where(
@@ -106,6 +106,7 @@ class TransactionController extends Controller
         $transaction = Transaction::with([
             'items.product',
             'payment',
+            'refund.processor:id,name',
             'user',
         ])->findOrFail($id);
 
