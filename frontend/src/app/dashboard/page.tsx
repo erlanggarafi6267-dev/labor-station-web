@@ -59,6 +59,7 @@ type DashboardData = {
     offline: number;
     grabfood: number;
     gross_total: number;
+    net_total: number;
   };
   customer_payment_confirmations: {
     offline: number;
@@ -69,6 +70,9 @@ type DashboardData = {
     total_transactions: number;
     platform_deduction: number;
     net_payout_received: number;
+  };
+  refunds: {
+    total: number;
   };
   expenses: {
     total: number;
@@ -782,6 +786,18 @@ export default function OwnerDashboard() {
                       <p className="mt-2 text-xs text-[#92775f]">
                         Pengeluaran pada periode terpilih
                       </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 p-5">
+                      <p className="text-sm font-semibold text-orange-900">Refund Tunai</p>
+                      <p className="mt-3 text-xl font-black text-orange-950">{formatRupiah(dashboard.refunds.total)}</p>
+                      <p className="mt-2 text-xs text-orange-800">Pengembalian dana transaksi OFFLINE</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-[#d5e5d8] bg-gradient-to-br from-[#f4fbf5] to-[#e5f1e7] p-5">
+                      <p className="text-sm font-semibold text-[#315b3a]">Net Sales</p>
+                      <p className="mt-3 text-xl font-black text-[#24482d]">{formatRupiah(dashboard.sales.net_total)}</p>
+                      <p className="mt-2 text-xs text-[#52775a]">Gross sales dikurangi refund</p>
                     </div>
                   </div>
                 </section>

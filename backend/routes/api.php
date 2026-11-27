@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\RefundController;
 use App\Http\Controllers\Api\OrderStatusController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\GrabFoodPayoutController;
@@ -158,6 +159,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/transactions/{id}/payment', [PaymentController::class, 'store'])
         ->middleware('permission:transaction.payment');
+
+    Route::post('/transactions/{id}/refund', [RefundController::class, 'store'])
+        ->middleware('permission:transaction.refund');
 
     Route::patch('/transactions/{id}/status', [OrderStatusController::class, 'update'])
         ->middleware('permission:transaction.status.update');

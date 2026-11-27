@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,11 +32,34 @@ class PaymentController extends Controller
             ],
         ]);
 
+        $actorId = (int) $request->user()->id;
+
         $transaction = DB::transaction(function () use (
             $id,
             $validated,
-            $request
+            $actorId
         ) {
+            /*
+             * Lock actor terlebih dahulu.
+             * Urutan ini disamakan dengan RefundController dan
+             * UserPermissionController untuk sinkronisasi RBAC.
+             */
+            $actor = User::query()
+                ->with('role')
+                ->lockForUpdate()
+                ->findOrFail($actorId);
+
+            /*
+             * Periksa ulang permission dari database.
+             * Middleware tetap menjadi lapisan otorisasi pertama.
+             */
+            if (!$actor->hasPermission('transaction.payment')) {
+                abort(403, 'Kamu tidak memiliki izin untuk memproses pembayaran.');
+            }
+
+            /*
+             * Lock transaksi setelah actor.
+             */
             $transaction = Transaction::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -122,13 +146,12 @@ class PaymentController extends Controller
             }
 
             $transaction->payment()->create([
-                'verified_by' => $request->user()->id,
+                'verified_by' => $actor->id,
                 'method' => $validated['method'],
                 'amount' => $total,
                 'cash_received' => $cashReceived,
                 'change_amount' => $changeAmount,
-                'reference_number' =>
-                    $validated['reference_number'] ?? null,
+                'reference_number' => $validated['reference_number'] ?? null,
                 'paid_at' => now(),
             ]);
 
