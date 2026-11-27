@@ -42,6 +42,9 @@ jobs:
 
       - name: Run backend test suite
         run: php artisan test
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
   frontend:
     name: Frontend lint, typecheck and build
