@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -128,10 +130,17 @@ class ExpenseController extends Controller
             ],
         ]);
 
+        $actorId = (int) $request->user()->id;
+
         $expense = DB::transaction(function () use (
             $validated,
-            $request
+            $actorId
         ) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'expense.create'
+            );
+
             $category = ExpenseCategory::query()
                 ->lockForUpdate()
                 ->findOrFail($validated['expense_category_id']);
@@ -146,11 +155,11 @@ class ExpenseController extends Controller
 
             $expense = Expense::create([
                 ...$validated,
-                'user_id' => $request->user()->id,
+                'user_id' => $actor->id,
             ]);
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'CREATE_EXPENSE',
                 $expense,
                 [
@@ -229,11 +238,18 @@ class ExpenseController extends Controller
             ], 422);
         }
 
+        $actorId = (int) $request->user()->id;
+
         $expense = DB::transaction(function () use (
             $validated,
-            $request,
+            $actorId,
             $id
         ) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'expense.update'
+            );
+
             $expense = Expense::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -263,7 +279,7 @@ class ExpenseController extends Controller
             $after = $this->expenseSnapshot($expense);
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'UPDATE_EXPENSE',
                 $expense,
                 [
@@ -288,7 +304,14 @@ class ExpenseController extends Controller
         Request $request,
         string $id
     ): JsonResponse {
-        DB::transaction(function () use ($request, $id) {
+        $actorId = (int) $request->user()->id;
+
+        DB::transaction(function () use ($actorId, $id) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'expense.delete'
+            );
+
             $expense = Expense::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -296,7 +319,7 @@ class ExpenseController extends Controller
             $before = $this->expenseSnapshot($expense);
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'DELETE_EXPENSE',
                 $expense,
                 [
@@ -310,6 +333,27 @@ class ExpenseController extends Controller
         return response()->json([
             'message' => 'Pengeluaran berhasil dihapus.',
         ]);
+    }
+
+    /**
+     * Mengunci actor dan memeriksa ulang permission di dalam transaksi.
+     */
+    private function lockAuthorizedActor(
+        int $actorId,
+        string $permission
+    ): User {
+        $actor = User::query()
+            ->with('role')
+            ->lockForUpdate()
+            ->findOrFail($actorId);
+
+        if (!$actor->hasPermission($permission)) {
+            throw new AuthorizationException(
+                'Kamu tidak memiliki izin untuk melakukan tindakan ini.'
+            );
+        }
+
+        return $actor;
     }
 
     /**
@@ -332,13 +376,13 @@ class ExpenseController extends Controller
      * Mencatat aktivitas pengeluaran.
      */
     private function writeAuditLog(
-        Request $request,
+        User $actor,
         string $action,
         Expense $expense,
         array $metadata = []
     ): void {
         AuditLog::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $actor->id,
             'action' => $action,
             'entity_type' => 'EXPENSE',
             'entity_id' => $expense->id,

@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\StockMovement;
+use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -147,10 +150,17 @@ class InventoryController extends Controller
             ],
         ]);
 
+        $actorId = (int) $request->user()->id;
+
         $ingredient = DB::transaction(function () use (
             $validated,
-            $request
+            $actorId
         ) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'inventory.manage'
+            );
+
             $initialStock = $this->toMilliUnits(
                 $validated['current_stock'] ?? '0'
             );
@@ -170,7 +180,7 @@ class InventoryController extends Controller
             if ($initialStock > 0) {
                 StockMovement::create([
                     'ingredient_id' => $ingredient->id,
-                    'user_id' => $request->user()->id,
+                    'user_id' => $actor->id,
                     'type' => 'IN',
                     'quantity' => $this->formatMilliUnits($initialStock),
                     'stock_before' => '0.000',
@@ -181,7 +191,7 @@ class InventoryController extends Controller
             }
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'CREATE_INGREDIENT',
                 $ingredient,
                 [
@@ -235,11 +245,18 @@ class InventoryController extends Controller
             ],
         ]);
 
+        $actorId = (int) $request->user()->id;
+
         $ingredient = DB::transaction(function () use (
             $validated,
-            $request,
+            $actorId,
             $id
         ) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'inventory.manage'
+            );
+
             $ingredient = Ingredient::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -258,7 +275,7 @@ class InventoryController extends Controller
             $ingredient->refresh();
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'UPDATE_INGREDIENT',
                 $ingredient,
                 [
@@ -281,7 +298,14 @@ class InventoryController extends Controller
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
-        DB::transaction(function () use ($request, $id) {
+        $actorId = (int) $request->user()->id;
+
+        DB::transaction(function () use ($actorId, $id) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'inventory.manage'
+            );
+
             $ingredient = Ingredient::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -299,7 +323,7 @@ class InventoryController extends Controller
             $ingredient->refresh();
 
             $this->writeAuditLog(
-                $request,
+                $actor,
                 'DEACTIVATE_INGREDIENT',
                 $ingredient,
                 [
@@ -359,11 +383,18 @@ class InventoryController extends Controller
             ],
         ]);
 
+        $actorId = (int) $request->user()->id;
+
         $movement = DB::transaction(function () use (
             $validated,
             $id,
-            $request
+            $actorId
         ) {
+            $actor = $this->lockAuthorizedActor(
+                $actorId,
+                'inventory.stock.manage'
+            );
+
             $ingredient = Ingredient::query()
                 ->lockForUpdate()
                 ->findOrFail($id);
@@ -433,7 +464,7 @@ class InventoryController extends Controller
 
             return StockMovement::create([
                 'ingredient_id' => $ingredient->id,
-                'user_id' => $request->user()->id,
+                'user_id' => $actor->id,
                 'type' => $validated['type'],
                 'quantity' => $quantityFormatted,
                 'stock_before' => $beforeFormatted,
@@ -550,6 +581,27 @@ class InventoryController extends Controller
     }
 
     /**
+     * Mengunci actor dan memeriksa ulang permission di dalam transaksi.
+     */
+    private function lockAuthorizedActor(
+        int $actorId,
+        string $permission
+    ): User {
+        $actor = User::query()
+            ->with('role')
+            ->lockForUpdate()
+            ->findOrFail($actorId);
+
+        if (!$actor->hasPermission($permission)) {
+            throw new AuthorizationException(
+                'Kamu tidak memiliki izin untuk melakukan tindakan ini.'
+            );
+        }
+
+        return $actor;
+    }
+
+    /**
      * Memastikan angka sesuai kapasitas DECIMAL(14,3).
      */
     private function isValidStockValue(mixed $value): bool
@@ -626,13 +678,13 @@ class InventoryController extends Controller
      * Mencatat aktivitas ke audit log.
      */
     private function writeAuditLog(
-        Request $request,
+        User $actor,
         string $action,
         Ingredient $ingredient,
         array $metadata = []
     ): void {
         AuditLog::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $actor->id,
             'action' => $action,
             'entity_type' => 'INGREDIENT',
             'entity_id' => $ingredient->id,

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureUserHasPermission;
 use App\Models\AuditLog;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
@@ -356,6 +357,103 @@ class ExpenseSecurityTest extends TestCase
             'user_id' => $staff->id,
             'description' => 'Pengeluaran oleh staff',
             'amount' => 30000,
+        ]);
+    }
+
+    public function test_controller_rechecks_create_permission_without_middleware(): void
+    {
+        $staff = $this->createUser(
+            'expense-controller-create@example.com',
+            'Staff',
+            'staff'
+        );
+
+        $category = $this->createCategory();
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($staff, 'sanctum')
+            ->postJson('/api/expenses', [
+                'expense_category_id' => $category->id,
+                'description' => 'Percobaan create tanpa permission',
+                'amount' => 10000,
+                'expense_date' => now()->toDateString(),
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseCount('expenses', 0);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'CREATE_EXPENSE',
+            'entity_type' => 'EXPENSE',
+        ]);
+    }
+
+    public function test_controller_rechecks_update_permission_without_middleware(): void
+    {
+        $staff = $this->createUser(
+            'expense-controller-update@example.com',
+            'Staff',
+            'staff'
+        );
+
+        $category = $this->createCategory();
+
+        $expense = $this->createExpense($staff, $category);
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($staff, 'sanctum')
+            ->putJson("/api/expenses/{$expense->id}", [
+                'description' => 'Percobaan update tanpa permission',
+                'amount' => 50000,
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expense->id,
+            'description' => 'Pengeluaran Test',
+            'amount' => 25000,
+        ]);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'UPDATE_EXPENSE',
+            'entity_type' => 'EXPENSE',
+            'entity_id' => $expense->id,
+        ]);
+    }
+
+    public function test_controller_rechecks_delete_permission_without_middleware(): void
+    {
+        $staff = $this->createUser(
+            'expense-controller-delete@example.com',
+            'Staff',
+            'staff'
+        );
+
+        $category = $this->createCategory();
+
+        $expense = $this->createExpense($staff, $category);
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($staff, 'sanctum')
+            ->deleteJson("/api/expenses/{$expense->id}");
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expense->id,
+            'description' => 'Pengeluaran Test',
+            'amount' => 25000,
+        ]);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'DELETE_EXPENSE',
+            'entity_type' => 'EXPENSE',
+            'entity_id' => $expense->id,
         ]);
     }
 

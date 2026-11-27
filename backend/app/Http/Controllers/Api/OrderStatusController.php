@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +25,37 @@ class OrderStatusController extends Controller
             ],
         ]);
 
-        $transaction = DB::transaction(function () use ($validated, $id) {
+        $actorId = (int) $request->user()->id;
 
+        $transaction = DB::transaction(function () use (
+            $validated,
+            $id,
+            $actorId
+        ) {
+            /*
+             * SECURITY:
+             * Lock user terlebih dahulu agar perubahan permission
+             * tersinkronisasi dengan proses perubahan status.
+             */
+            $actor = User::query()
+                ->with('role')
+                ->lockForUpdate()
+                ->findOrFail($actorId);
+
+            /*
+             * SECURITY:
+             * Verifikasi ulang permission di dalam transaksi.
+             * Jangan hanya mengandalkan middleware.
+             */
+            if (!$actor->hasPermission('transaction.status.update')) {
+                throw new AuthorizationException(
+                    'Kamu tidak memiliki izin untuk memperbarui status pesanan.'
+                );
+            }
+
+            /*
+             * Lock transaksi setelah actor berhasil diverifikasi.
+             */
             $transaction = Transaction::query()
                 ->lockForUpdate()
                 ->findOrFail($id);

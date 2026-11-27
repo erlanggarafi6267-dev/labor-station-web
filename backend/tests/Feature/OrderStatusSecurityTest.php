@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureUserHasPermission;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Transaction;
@@ -248,6 +249,31 @@ class OrderStatusSecurityTest extends TestCase
         );
 
         $transaction = $this->createTransaction($user);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/transactions/{$transaction->id}/status", [
+                'order_status' => 'PREPARING',
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('transactions', [
+            'id' => $transaction->id,
+            'order_status' => 'NEW',
+        ]);
+    }
+
+    public function test_controller_rechecks_status_permission_without_middleware(): void
+    {
+        $user = $this->createCashier(
+            'status-controller-recheck@example.com',
+            false
+        );
+
+        $transaction = $this->createTransaction($user);
+
+        // Lewati middleware permission untuk menguji pemeriksaan controller.
+        $this->withoutMiddleware(EnsureUserHasPermission::class);
 
         $response = $this->actingAs($user, 'sanctum')
             ->patchJson("/api/transactions/{$transaction->id}/status", [

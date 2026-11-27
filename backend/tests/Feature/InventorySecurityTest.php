@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureUserHasPermission;
 use App\Models\AuditLog;
 use App\Models\Ingredient;
 use App\Models\Permission;
@@ -394,6 +395,128 @@ class InventorySecurityTest extends TestCase
         $ingredient = $this->createIngredient('5.000');
 
         $response = $this->actingAs($user, 'sanctum')
+            ->postJson(
+                "/api/inventory/{$ingredient->id}/movements",
+                [
+                    'type' => 'IN',
+                    'quantity' => '1.000',
+                    'reason' => 'Percobaan tanpa permission.',
+                ]
+            );
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('ingredients', [
+            'id' => $ingredient->id,
+            'current_stock' => '5.000',
+        ]);
+
+        $this->assertDatabaseMissing('stock_movements', [
+            'ingredient_id' => $ingredient->id,
+        ]);
+    }
+
+    public function test_controller_rechecks_inventory_manage_permission_without_middleware_on_create(): void
+    {
+        $user = $this->createStaff(
+            'inventory-controller-create@example.com'
+        );
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($user, 'sanctum')
+            ->postJson('/api/inventory', [
+                'name' => 'Bahan Tanpa Permission',
+                'unit' => 'gram',
+                'current_stock' => '5.000',
+                'minimum_stock' => '1.000',
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseMissing('ingredients', [
+            'name' => 'Bahan Tanpa Permission',
+        ]);
+
+        $this->assertDatabaseMissing('stock_movements', [
+            'reason' => 'Stok awal bahan baku',
+        ]);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'CREATE_INGREDIENT',
+        ]);
+    }
+
+    public function test_controller_rechecks_inventory_manage_permission_without_middleware_on_update(): void
+    {
+        $user = $this->createStaff(
+            'inventory-controller-update@example.com'
+        );
+
+        $ingredient = $this->createIngredient();
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($user, 'sanctum')
+            ->putJson("/api/inventory/{$ingredient->id}", [
+                'name' => 'Nama Tidak Boleh Berubah',
+                'unit' => 'kilogram',
+                'minimum_stock' => '3.000',
+                'is_active' => true,
+            ]);
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('ingredients', [
+            'id' => $ingredient->id,
+            'name' => $ingredient->name,
+            'unit' => 'gram',
+            'minimum_stock' => '2.000',
+        ]);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'UPDATE_INGREDIENT',
+            'entity_id' => $ingredient->id,
+        ]);
+    }
+
+    public function test_controller_rechecks_inventory_manage_permission_without_middleware_on_deactivate(): void
+    {
+        $user = $this->createStaff(
+            'inventory-controller-deactivate@example.com'
+        );
+
+        $ingredient = $this->createIngredient();
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($user, 'sanctum')
+            ->deleteJson("/api/inventory/{$ingredient->id}");
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('ingredients', [
+            'id' => $ingredient->id,
+            'is_active' => true,
+        ]);
+
+        $this->assertDatabaseMissing('audit_logs', [
+            'action' => 'DEACTIVATE_INGREDIENT',
+            'entity_id' => $ingredient->id,
+        ]);
+    }
+
+    public function test_controller_rechecks_stock_permission_without_middleware_on_movement(): void
+    {
+        $user = $this->createStaff(
+            'inventory-controller-movement@example.com'
+        );
+
+        $ingredient = $this->createIngredient('5.000');
+
+        $response = $this
+            ->withoutMiddleware(EnsureUserHasPermission::class)
+            ->actingAs($user, 'sanctum')
             ->postJson(
                 "/api/inventory/{$ingredient->id}/movements",
                 [
