@@ -1214,7 +1214,7 @@ function closeDetail() {
                       </button>
                     )}
 
-                  {selectedTransaction.payment_status !== "PAID" &&
+                  {selectedTransaction.payment_status === "UNPAID" &&
                     selectedTransaction.order_status !== "CANCELLED" && (
                       <button
                         type="button"
