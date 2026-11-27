@@ -30,7 +30,7 @@ class TransactionController extends Controller
             ],
             'payment_status' => [
                 'nullable',
-                'in:UNPAID,PAID',
+                'in:UNPAID,PAID,REFUNDED',
             ],
             'search' => [
                 'nullable',
