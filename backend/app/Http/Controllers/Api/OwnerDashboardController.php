@@ -114,7 +114,7 @@ class OwnerDashboardController extends Controller
         $totalRefunds = DB::table('refunds')
             ->join('transactions', 'refunds.transaction_id', '=', 'transactions.id')
             ->where('transactions.sales_channel', 'OFFLINE')
-            ->whereBetween('refunds.refunded_at', [$start, $end])
+            ->whereBetween('transactions.created_at', [$start, $end])
             ->sum('refunds.amount');
 
         $totalExpenses = Expense::query()
