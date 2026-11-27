@@ -447,6 +447,48 @@ async function submitPayment() {
     }
 }
 
+async function submitRefund() {
+    if (!selectedTransaction || refundLoading) return;
+
+    const reason = refundReason.trim();
+    if (reason.length < 3 || reason.length > 1000) {
+      setActionMessage("Alasan refund wajib diisi (3–1000 karakter).");
+      return;
+    }
+
+    setRefundLoading(true);
+    setActionMessage("");
+
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(
+        API_URL + "/transactions/" + selectedTransaction.id + "/refund",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { ...getHeaders(), "X-XSRF-TOKEN": csrfToken },
+          body: JSON.stringify({ reason }),
+        }
+      );
+      const result = await readResponse(response);
+      setRefundOpen(false);
+      setRefundReason("");
+      setActionMessage(result.message || "Refund tunai berhasil dicatat.");
+      await fetchTransactions();
+
+      const detailResponse = await fetch(
+        API_URL + "/transactions/" + selectedTransaction.id,
+        { credentials: "include", headers: getHeaders(), cache: "no-store" }
+      );
+      const detailResult = await readResponse(detailResponse);
+      setSelectedTransaction(detailResult.data);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Refund gagal diproses.");
+    } finally {
+      setRefundLoading(false);
+    }
+  }
+
 async function updateOrderStatus(
     newStatus: "PREPARING" | "READY" | "COMPLETED" | "CANCELLED"
 ) {
@@ -1108,6 +1150,16 @@ function closeDetail() {
                     )}
                   </div>
 
+                  {selectedTransaction.refund && (
+                    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                      <p className="font-bold">Refund tunai tercatat</p>
+                      <p className="mt-1">Nominal: {formatRupiah(selectedTransaction.refund.amount)}</p>
+                      <p className="mt-1">Waktu: {formatDate(selectedTransaction.refund.refunded_at)}</p>
+                      <p className="mt-1">Diproses oleh: {selectedTransaction.refund.processor?.name || "-"}</p>
+                      <p className="mt-1">Alasan: {selectedTransaction.refund.reason}</p>
+                    </div>
+                  )}
+
                   {selectedTransaction.payment && (
                     <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
                       <p className="font-bold">
@@ -1145,6 +1197,23 @@ function closeDetail() {
                     </div>
                   )}
 
+                  {canRefund &&
+                    selectedTransaction.sales_channel === "OFFLINE" &&
+                    selectedTransaction.payment_status === "PAID" &&
+                    !selectedTransaction.refund && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRefundReason("");
+                          setActionMessage("");
+                          setRefundOpen(true);
+                        }}
+                        className="w-full rounded-xl border border-orange-300 bg-orange-50 px-5 py-3.5 text-sm font-bold text-orange-800 transition hover:bg-orange-100"
+                      >
+                        Proses Refund Tunai
+                      </button>
+                    )}
+
                   {selectedTransaction.payment_status !== "PAID" &&
                     selectedTransaction.order_status !== "CANCELLED" && (
                       <button
@@ -1166,6 +1235,36 @@ function closeDetail() {
                   )}
                 </>
               )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* MODAL REFUND TUNAI */}
+      {refundOpen && selectedTransaction && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3">
+          <section className="w-full max-w-md rounded-2xl bg-[#fffaf4] p-5 shadow-2xl">
+            <h2 className="text-xl font-bold text-[#543923]">Konfirmasi Refund Tunai</h2>
+            <p className="mt-1 text-sm text-[#92775f]">{selectedTransaction.invoice_number}</p>
+            <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-4">
+              <p className="text-sm text-orange-800">Nominal yang dikembalikan</p>
+              <p className="mt-1 text-2xl font-bold text-orange-900">{formatRupiah(selectedTransaction.payment?.amount ?? selectedTransaction.total)}</p>
+              <p className="mt-1 text-xs text-orange-800">Metode pengembalian selalu CASH. Pembayaran asli tetap tersimpan.</p>
+            </div>
+            <label htmlFor="refund-reason" className="mt-5 mb-2 block text-sm font-semibold">Alasan refund</label>
+            <textarea
+              id="refund-reason"
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              maxLength={1000}
+              rows={4}
+              placeholder="Tuliskan alasan refund secara jelas..."
+              className="w-full resize-y rounded-xl border border-[#eadccf] bg-white px-3 py-3 text-sm outline-none focus:border-[#92704e]"
+            />
+            <p className="mt-1 text-right text-xs text-[#92775f]">{refundReason.trim().length}/1000</p>
+            <div className="mt-5 flex gap-3">
+              <button type="button" disabled={refundLoading} onClick={() => setRefundOpen(false)} className="flex-1 rounded-xl border border-[#eadccf] px-4 py-3 text-sm font-semibold text-[#543923] disabled:opacity-50">Batal</button>
+              <button type="button" disabled={refundLoading || refundReason.trim().length < 3} onClick={() => void submitRefund()} className="flex-1 rounded-xl bg-orange-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50">{refundLoading ? "Memproses..." : "Konfirmasi Refund"}</button>
             </div>
           </section>
         </div>
