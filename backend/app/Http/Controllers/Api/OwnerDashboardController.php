@@ -189,6 +189,9 @@ class OwnerDashboardController extends Controller
                 'grabfood' => (int) $grabFoodSales,
                 'gross_total' => (int) $offlineSales
                     + (int) $grabFoodSales,
+                'net_total' => (int) $offlineSales
+                    + (int) $grabFoodSales
+                    - (int) $totalRefunds,
             ],
 
             'customer_payment_confirmations' => [
@@ -202,6 +205,10 @@ class OwnerDashboardController extends Controller
                 'total_transactions' => $totalPayoutTransactions,
                 'platform_deduction' => (int) $platformDeduction,
                 'net_payout_received' => (int) $netPayout,
+            ],
+
+            'refunds' => [
+                'total' => (int) $totalRefunds,
             ],
 
             'expenses' => [
