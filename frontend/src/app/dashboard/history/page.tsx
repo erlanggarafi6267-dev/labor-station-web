@@ -59,6 +59,15 @@ type TransactionItem = {
   subtotal: number | string;
 };
 
+type Refund = {
+  id: number;
+  amount: number | string;
+  method: string;
+  reason: string;
+  refunded_at: string;
+  processor?: { name?: string };
+};
+
 type Payment = {
   id: number;
   method: string;
@@ -81,6 +90,7 @@ type Transaction = {
   created_at: string;
   items?: TransactionItem[];
   payment?: Payment | null;
+  refund?: Refund | null;
   user?: {
     name?: string;
   };
@@ -129,6 +139,7 @@ function statusLabel(status?: string) {
   const labels: Record<string, string> = {
     PAID: "Lunas",
     UNPAID: "Belum Dibayar",
+    REFUNDED: "Direfund",
     PENDING: "Menunggu",
 
     NEW: "Pesanan Baru",
@@ -157,6 +168,9 @@ function statusStyle(status?: string) {
 
     case "CANCELLED":
       return "bg-red-100 text-red-700";
+
+    case "REFUNDED":
+      return "bg-orange-100 text-orange-800";
 
     case "PREPARING":
       return "bg-blue-100 text-blue-700";
@@ -204,6 +218,10 @@ export default function TransactionHistoryPage() {
     const [paymentLoading, setPaymentLoading] = useState(false);
     const [actionMessage, setActionMessage] = useState("");
     const [orderStatusLoading, setOrderStatusLoading] = useState(false);
+    const [refundOpen, setRefundOpen] = useState(false);
+    const [refundReason, setRefundReason] = useState("");
+    const [refundLoading, setRefundLoading] = useState(false);
+    const [canRefund, setCanRefund] = useState(false);
 
     const getHeaders = useCallback(() => {
     return {
@@ -280,6 +298,19 @@ export default function TransactionHistoryPage() {
       void fetchTransactions();
     });
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/me`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (!active || !result?.user) return;
+        const permissions: string[] = result.user.permissions || [];
+        setCanRefund(result.user.role === "owner" || permissions.includes("transaction.refund"));
+      })
+      .catch(() => { if (active) setCanRefund(false); });
+    return () => { active = false; };
+  }, []);
 
 
   const paidCount = useMemo(
@@ -615,6 +646,7 @@ function closeDetail() {
               <option value="ALL">Semua Pembayaran</option>
               <option value="PAID">Lunas</option>
               <option value="UNPAID">Belum Dibayar</option>
+              <option value="REFUNDED">Direfund</option>
             </select>
 
             <select
