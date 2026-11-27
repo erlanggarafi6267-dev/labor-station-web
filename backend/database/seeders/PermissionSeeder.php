@@ -22,6 +22,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'Melihat Transaksi', 'slug' => 'transaction.view'],
             ['name' => 'Membuat Transaksi', 'slug' => 'transaction.create'],
             ['name' => 'Mengelola Pembayaran', 'slug' => 'transaction.payment'],
+            ['name' => 'Memproses Refund Transaksi', 'slug' => 'transaction.refund'],
             ['name' => 'Mengubah Status Pesanan', 'slug' => 'transaction.status.update'],
 
             ['name' => 'Melihat Pengeluaran', 'slug' => 'expense.view'],
