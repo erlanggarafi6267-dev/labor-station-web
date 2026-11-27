@@ -15,10 +15,18 @@ class RefundController extends Controller
     public function store(Request $request, string $id): JsonResponse
     {
         $validated = $request->validate([
-            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+            'reason' => ['required', 'string', 'max:1000'],
         ]);
 
-        $refund = DB::transaction(function () use ($request, $id, $validated) {
+        $reason = trim($validated['reason']);
+
+        if (mb_strlen($reason) < 3) {
+            throw ValidationException::withMessages([
+                'reason' => ['Alasan refund minimal 3 karakter setelah spasi dihapus.'],
+            ]);
+        }
+
+        $refund = DB::transaction(function () use ($request, $id, $reason) {
             $transaction = Transaction::query()
                 ->with('payment')
                 ->lockForUpdate()
@@ -70,7 +78,7 @@ class RefundController extends Controller
                 'processed_by' => $request->user()->id,
                 'amount' => $amount,
                 'method' => 'CASH',
-                'reason' => trim($validated['reason']),
+                'reason' => $reason,
                 'refunded_at' => now(),
             ]);
 
