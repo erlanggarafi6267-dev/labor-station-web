@@ -111,6 +111,12 @@ class OwnerDashboardController extends Controller
          * 4. PENGELUARAN
          * Berdasarkan tanggal pengeluaran.
          */
+        $totalRefunds = DB::table('refunds')
+            ->join('transactions', 'refunds.transaction_id', '=', 'transactions.id')
+            ->where('transactions.sales_channel', 'OFFLINE')
+            ->whereBetween('transactions.created_at', [$start, $end])
+            ->sum('refunds.amount');
+
         $totalExpenses = Expense::query()
             ->whereBetween('expense_date', [
                 $startDate,
@@ -120,9 +126,11 @@ class OwnerDashboardController extends Controller
 
         /*
         * 5. STATUS PESANAN
-        * Menghitung status transaksi pada periode terpilih.
+        * Menghitung seluruh status transaksi pada periode terpilih,
+        * termasuk transaksi CANCELLED.
         */
-        $orderStatusCounts = (clone $transactions)
+        $orderStatusCounts = Transaction::query()
+            ->whereBetween('created_at', [$start, $end])
             ->select(
                 'order_status',
                 DB::raw('COUNT(*) as total')
@@ -181,6 +189,9 @@ class OwnerDashboardController extends Controller
                 'grabfood' => (int) $grabFoodSales,
                 'gross_total' => (int) $offlineSales
                     + (int) $grabFoodSales,
+                'net_total' => (int) $offlineSales
+                    + (int) $grabFoodSales
+                    - (int) $totalRefunds,
             ],
 
             'customer_payment_confirmations' => [
@@ -194,6 +205,10 @@ class OwnerDashboardController extends Controller
                 'total_transactions' => $totalPayoutTransactions,
                 'platform_deduction' => (int) $platformDeduction,
                 'net_payout_received' => (int) $netPayout,
+            ],
+
+            'refunds' => [
+                'total' => (int) $totalRefunds,
             ],
 
             'expenses' => [

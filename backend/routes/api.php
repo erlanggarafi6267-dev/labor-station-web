@@ -6,10 +6,12 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\RefundController;
 use App\Http\Controllers\Api\OrderStatusController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\GrabFoodPayoutController;
 use App\Http\Controllers\Api\OwnerDashboardController;
+use App\Http\Controllers\Api\OwnerDashboardPreferenceController;
 use App\Http\Controllers\Api\ProductCatalogController;
 use App\Http\Controllers\Api\ProductManagementController;
 use App\Http\Controllers\Api\CategoryController;
@@ -100,8 +102,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ProductManagementController::class, 'show'])
             ->middleware('permission:product.view');
 
-        Route::put('/{id}', [ProductManagementController::class, 'update'])
-            ->middleware('permission:product.update');
+        /*
+         * Permission update diperiksa secara granular
+         * di dalam ProductManagementController.
+         *
+         * product.update
+         * product.price.update
+         * product.status.update
+         *
+         * Autentikasi tetap diwajibkan oleh auth:sanctum.
+         */
+
+        Route::put('/{id}', [ProductManagementController::class, 'update']);
 
         Route::delete('/{id}', [ProductManagementController::class, 'destroy'])
             ->middleware('permission:product.delete');
@@ -148,11 +160,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/transactions/{id}/payment', [PaymentController::class, 'store'])
         ->middleware('permission:transaction.payment');
 
-    // Update status pesanan
+    Route::post('/transactions/{id}/refund', [RefundController::class, 'store'])
+        ->middleware('permission:transaction.refund');
+
     Route::patch('/transactions/{id}/status', [OrderStatusController::class, 'update'])
         ->middleware('permission:transaction.status.update');
 
-    // GrabFood payout khusus Owner
     Route::post('/transactions/{id}/payout', [GrabFoodPayoutController::class, 'store'])
         ->middleware('role:owner');
 
@@ -187,15 +200,42 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:owner')->group(function () {
 
-        // Owner dashboard
+        /*
+        |--------------------------------------------------------------------------
+        | OWNER DASHBOARD
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/owner/dashboard', [OwnerDashboardController::class, 'index']);
 
-        // Audit logs
+        Route::get(
+            '/owner/dashboard/preferences',
+            [OwnerDashboardPreferenceController::class, 'show']
+        );
+
+        Route::put(
+            '/owner/dashboard/preferences',
+            [OwnerDashboardPreferenceController::class, 'update']
+        );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | AUDIT LOGS
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/owner/audit-logs', [AuditLogController::class, 'index']);
 
         Route::get('/owner/audit-logs/{id}', [AuditLogController::class, 'show']);
 
-        // User permissions
+
+        /*
+        |--------------------------------------------------------------------------
+        | USER PERMISSION MANAGEMENT
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/owner/users', [UserPermissionController::class, 'index']);
 
         Route::get(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 
 const API_URL = (
@@ -44,6 +45,7 @@ async function initializeCsrf(): Promise<string> {
 
 
 export default function Home() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -87,7 +89,7 @@ async function handleLogin(event: FormEvent<HTMLFormElement>) {
       throw new Error("Data pengguna tidak ditemukan.");
     }
 
-    window.location.href = "/dashboard";
+    router.push("/dashboard");
   } catch (err) {
     setError(
       err instanceof Error

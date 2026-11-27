@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const API_URL = (
     process.env.NEXT_PUBLIC_API_URL ||
@@ -58,6 +59,15 @@ type TransactionItem = {
   subtotal: number | string;
 };
 
+type Refund = {
+  id: number;
+  amount: number | string;
+  method: string;
+  reason: string;
+  refunded_at: string;
+  processor?: { name?: string };
+};
+
 type Payment = {
   id: number;
   method: string;
@@ -80,6 +90,7 @@ type Transaction = {
   created_at: string;
   items?: TransactionItem[];
   payment?: Payment | null;
+  refund?: Refund | null;
   user?: {
     name?: string;
   };
@@ -128,6 +139,7 @@ function statusLabel(status?: string) {
   const labels: Record<string, string> = {
     PAID: "Lunas",
     UNPAID: "Belum Dibayar",
+    REFUNDED: "Direfund",
     PENDING: "Menunggu",
 
     NEW: "Pesanan Baru",
@@ -157,6 +169,9 @@ function statusStyle(status?: string) {
     case "CANCELLED":
       return "bg-red-100 text-red-700";
 
+    case "REFUNDED":
+      return "bg-orange-100 text-orange-800";
+
     case "PREPARING":
       return "bg-blue-100 text-blue-700";
 
@@ -181,6 +196,7 @@ async function readResponse(response: Response) {
 }
 
 export default function TransactionHistoryPage() {
+  const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pagination, setPagination] =
     useState<Pagination>(EMPTY_PAGINATION);
@@ -202,6 +218,10 @@ export default function TransactionHistoryPage() {
     const [paymentLoading, setPaymentLoading] = useState(false);
     const [actionMessage, setActionMessage] = useState("");
     const [orderStatusLoading, setOrderStatusLoading] = useState(false);
+    const [refundOpen, setRefundOpen] = useState(false);
+    const [refundReason, setRefundReason] = useState("");
+    const [refundLoading, setRefundLoading] = useState(false);
+    const [canRefund, setCanRefund] = useState(false);
 
     const getHeaders = useCallback(() => {
     return {
@@ -272,9 +292,26 @@ export default function TransactionHistoryPage() {
     search,
   ]);
 
+
   useEffect(() => {
-    void fetchTransactions();
+    queueMicrotask(() => {
+      void fetchTransactions();
+    });
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/me`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (!active || !result?.user) return;
+        const permissions: string[] = result.user.permissions || [];
+        setCanRefund(result.user.role === "owner" || permissions.includes("transaction.refund"));
+      })
+      .catch(() => { if (active) setCanRefund(false); });
+    return () => { active = false; };
+  }, []);
+
 
   const paidCount = useMemo(
     () =>
@@ -410,6 +447,48 @@ async function submitPayment() {
     }
 }
 
+async function submitRefund() {
+    if (!selectedTransaction || refundLoading) return;
+
+    const reason = refundReason.trim();
+    if (reason.length < 3 || reason.length > 1000) {
+      setActionMessage("Alasan refund wajib diisi (3–1000 karakter).");
+      return;
+    }
+
+    setRefundLoading(true);
+    setActionMessage("");
+
+    try {
+      const csrfToken = await getCsrfToken();
+      const response = await fetch(
+        API_URL + "/transactions/" + selectedTransaction.id + "/refund",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { ...getHeaders(), "X-XSRF-TOKEN": csrfToken },
+          body: JSON.stringify({ reason }),
+        }
+      );
+      const result = await readResponse(response);
+      setRefundOpen(false);
+      setRefundReason("");
+      setActionMessage(result.message || "Refund tunai berhasil dicatat.");
+      await fetchTransactions();
+
+      const detailResponse = await fetch(
+        API_URL + "/transactions/" + selectedTransaction.id,
+        { credentials: "include", headers: getHeaders(), cache: "no-store" }
+      );
+      const detailResult = await readResponse(detailResponse);
+      setSelectedTransaction(detailResult.data);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Refund gagal diproses.");
+    } finally {
+      setRefundLoading(false);
+    }
+  }
+
 async function updateOrderStatus(
     newStatus: "PREPARING" | "READY" | "COMPLETED" | "CANCELLED"
 ) {
@@ -511,9 +590,7 @@ function closeDetail() {
           <div className="flex items-center justify-between gap-4">
             <button
               type="button"
-              onClick={() => {
-                window.location.href = "/dashboard";
-              }}
+            onClick={() => router.push("/dashboard")}
               className="inline-flex items-center gap-2 rounded-xl border border-[#eadccf] bg-[#fffaf4] px-4 py-2.5 text-sm font-semibold text-[#543923] transition hover:bg-[#f1e6da]"
             >
               <span>←</span>
@@ -611,6 +688,7 @@ function closeDetail() {
               <option value="ALL">Semua Pembayaran</option>
               <option value="PAID">Lunas</option>
               <option value="UNPAID">Belum Dibayar</option>
+              <option value="REFUNDED">Direfund</option>
             </select>
 
             <select
@@ -901,7 +979,7 @@ function closeDetail() {
                     )}
 
                     {selectedTransaction.order_status === "NEW" &&
-                    selectedTransaction.payment_status !== "PAID" && (
+                    selectedTransaction.payment_status === "UNPAID" && (
                         <button
                         type="button"
                         disabled={orderStatusLoading}
@@ -1072,6 +1150,16 @@ function closeDetail() {
                     )}
                   </div>
 
+                  {selectedTransaction.refund && (
+                    <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                      <p className="font-bold">Refund tunai tercatat</p>
+                      <p className="mt-1">Nominal: {formatRupiah(selectedTransaction.refund.amount)}</p>
+                      <p className="mt-1">Waktu: {formatDate(selectedTransaction.refund.refunded_at)}</p>
+                      <p className="mt-1">Diproses oleh: {selectedTransaction.refund.processor?.name || "-"}</p>
+                      <p className="mt-1">Alasan: {selectedTransaction.refund.reason}</p>
+                    </div>
+                  )}
+
                   {selectedTransaction.payment && (
                     <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
                       <p className="font-bold">
@@ -1109,7 +1197,24 @@ function closeDetail() {
                     </div>
                   )}
 
-                  {selectedTransaction.payment_status !== "PAID" &&
+                  {canRefund &&
+                    selectedTransaction.sales_channel === "OFFLINE" &&
+                    selectedTransaction.payment_status === "PAID" &&
+                    !selectedTransaction.refund && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRefundReason("");
+                          setActionMessage("");
+                          setRefundOpen(true);
+                        }}
+                        className="w-full rounded-xl border border-orange-300 bg-orange-50 px-5 py-3.5 text-sm font-bold text-orange-800 transition hover:bg-orange-100"
+                      >
+                        Proses Refund Tunai
+                      </button>
+                    )}
+
+                  {selectedTransaction.payment_status === "UNPAID" &&
                     selectedTransaction.order_status !== "CANCELLED" && (
                       <button
                         type="button"
@@ -1130,6 +1235,36 @@ function closeDetail() {
                   )}
                 </>
               )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* MODAL REFUND TUNAI */}
+      {refundOpen && selectedTransaction && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3">
+          <section className="w-full max-w-md rounded-2xl bg-[#fffaf4] p-5 shadow-2xl">
+            <h2 className="text-xl font-bold text-[#543923]">Konfirmasi Refund Tunai</h2>
+            <p className="mt-1 text-sm text-[#92775f]">{selectedTransaction.invoice_number}</p>
+            <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-4">
+              <p className="text-sm text-orange-800">Nominal yang dikembalikan</p>
+              <p className="mt-1 text-2xl font-bold text-orange-900">{formatRupiah(selectedTransaction.payment?.amount ?? selectedTransaction.total)}</p>
+              <p className="mt-1 text-xs text-orange-800">Metode pengembalian selalu CASH. Pembayaran asli tetap tersimpan.</p>
+            </div>
+            <label htmlFor="refund-reason" className="mt-5 mb-2 block text-sm font-semibold">Alasan refund</label>
+            <textarea
+              id="refund-reason"
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              maxLength={1000}
+              rows={4}
+              placeholder="Tuliskan alasan refund secara jelas..."
+              className="w-full resize-y rounded-xl border border-[#eadccf] bg-white px-3 py-3 text-sm outline-none focus:border-[#92704e]"
+            />
+            <p className="mt-1 text-right text-xs text-[#92775f]">{refundReason.trim().length}/1000</p>
+            <div className="mt-5 flex gap-3">
+              <button type="button" disabled={refundLoading} onClick={() => setRefundOpen(false)} className="flex-1 rounded-xl border border-[#eadccf] px-4 py-3 text-sm font-semibold text-[#543923] disabled:opacity-50">Batal</button>
+              <button type="button" disabled={refundLoading || refundReason.trim().length < 3} onClick={() => void submitRefund()} className="flex-1 rounded-xl bg-orange-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50">{refundLoading ? "Memproses..." : "Konfirmasi Refund"}</button>
             </div>
           </section>
         </div>

@@ -3,44 +3,88 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ExpenseController extends Controller
 {
+    /**
+     * Menampilkan daftar pengeluaran.
+     */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => ['nullable', 'integer', 'exists:expense_categories,id'],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-            'search' => ['nullable', 'string', 'max:100'],
+            'category_id' => [
+                'nullable',
+                'integer',
+                'exists:expense_categories,id',
+            ],
+            'date_from' => [
+                'nullable',
+                'date',
+            ],
+            'date_to' => [
+                'nullable',
+                'date',
+                'after_or_equal:date_from',
+            ],
+            'search' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
         ]);
 
         $expenses = Expense::query()
             ->with(['category', 'user'])
             ->when(
                 !empty($validated['category_id']),
-                fn ($query) => $query->where('expense_category_id', $validated['category_id'])
+                fn ($query) => $query->where(
+                    'expense_category_id',
+                    $validated['category_id']
+                )
             )
             ->when(
                 !empty($validated['date_from']),
-                fn ($query) => $query->whereDate('expense_date', '>=', $validated['date_from'])
+                fn ($query) => $query->whereDate(
+                    'expense_date',
+                    '>=',
+                    $validated['date_from']
+                )
             )
             ->when(
                 !empty($validated['date_to']),
-                fn ($query) => $query->whereDate('expense_date', '<=', $validated['date_to'])
+                fn ($query) => $query->whereDate(
+                    'expense_date',
+                    '<=',
+                    $validated['date_to']
+                )
             )
-            ->when(!empty($validated['search']), function ($query) use ($validated) {
-                $search = $validated['search'];
+            ->when(
+                !empty($validated['search']),
+                function ($query) use ($validated) {
+                    $search = $validated['search'];
 
-                $query->where(function ($subQuery) use ($search) {
-                    $subQuery->where('description', 'ILIKE', "%{$search}%")
-                        ->orWhere('notes', 'ILIKE', "%{$search}%");
-                });
-            })
+                    $query->where(function ($subQuery) use ($search) {
+                        $subQuery
+                            ->where(
+                                'description',
+                                'ILIKE',
+                                "%{$search}%"
+                            )
+                            ->orWhere(
+                                'notes',
+                                'ILIKE',
+                                "%{$search}%"
+                            );
+                    });
+                }
+            )
             ->orderByDesc('expense_date')
             ->orderByDesc('id')
             ->paginate(15);
@@ -51,6 +95,9 @@ class ExpenseController extends Controller
         ]);
     }
 
+    /**
+     * Menambahkan pengeluaran baru.
+     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -59,26 +106,60 @@ class ExpenseController extends Controller
                 'integer',
                 'exists:expense_categories,id',
             ],
-            'description' => ['required', 'string', 'max:255'],
-            'amount' => ['required', 'integer', 'min:1'],
-            'expense_date' => ['required', 'date'],
-            'notes' => ['nullable', 'string'],
+            'description' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+            'amount' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:' . PHP_INT_MAX,
+            ],
+            'expense_date' => [
+                'required',
+                'date',
+            ],
+            'notes' => [
+                'nullable',
+                'string',
+                'max:5000',
+            ],
         ]);
 
-        $category = ExpenseCategory::findOrFail(
-            $validated['expense_category_id']
-        );
+        $expense = DB::transaction(function () use (
+            $validated,
+            $request
+        ) {
+            $category = ExpenseCategory::query()
+                ->lockForUpdate()
+                ->findOrFail($validated['expense_category_id']);
 
-        if (!$category->is_active) {
-            return response()->json([
-                'message' => 'Kategori pengeluaran tidak aktif.',
-            ], 422);
-        }
+            if (!$category->is_active) {
+                throw ValidationException::withMessages([
+                    'expense_category_id' => [
+                        'Kategori pengeluaran tidak aktif.',
+                    ],
+                ]);
+            }
 
-        $expense = Expense::create([
-            ...$validated,
-            'user_id' => $request->user()->id,
-        ]);
+            $expense = Expense::create([
+                ...$validated,
+                'user_id' => $request->user()->id,
+            ]);
+
+            $this->writeAuditLog(
+                $request,
+                'CREATE_EXPENSE',
+                $expense,
+                [
+                    'after' => $this->expenseSnapshot($expense),
+                ]
+            );
+
+            return $expense;
+        });
 
         return response()->json([
             'message' => 'Pengeluaran berhasil ditambahkan.',
@@ -86,9 +167,15 @@ class ExpenseController extends Controller
         ], 201);
     }
 
+    /**
+     * Menampilkan detail pengeluaran.
+     */
     public function show(string $id): JsonResponse
     {
-        $expense = Expense::with(['category', 'user'])->findOrFail($id);
+        $expense = Expense::with([
+            'category',
+            'user',
+        ])->findOrFail($id);
 
         return response()->json([
             'message' => 'Detail pengeluaran berhasil diambil.',
@@ -96,10 +183,13 @@ class ExpenseController extends Controller
         ]);
     }
 
-    public function update(Request $request, string $id): JsonResponse
-    {
-        $expense = Expense::findOrFail($id);
-
+    /**
+     * Memperbarui pengeluaran.
+     */
+    public function update(
+        Request $request,
+        string $id
+    ): JsonResponse {
         $validated = $request->validate([
             'expense_category_id' => [
                 'sometimes',
@@ -107,40 +197,153 @@ class ExpenseController extends Controller
                 'integer',
                 'exists:expense_categories,id',
             ],
-            'description' => ['sometimes', 'required', 'string', 'max:255'],
-            'amount' => ['sometimes', 'required', 'integer', 'min:1'],
-            'expense_date' => ['sometimes', 'required', 'date'],
-            'notes' => ['sometimes', 'nullable', 'string'],
+            'description' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+            ],
+            'amount' => [
+                'sometimes',
+                'required',
+                'integer',
+                'min:1',
+                'max:' . PHP_INT_MAX,
+            ],
+            'expense_date' => [
+                'sometimes',
+                'required',
+                'date',
+            ],
+            'notes' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:5000',
+            ],
         ]);
 
-        if (isset($validated['expense_category_id'])) {
-            $category = ExpenseCategory::findOrFail(
-                $validated['expense_category_id']
-            );
-
-            if (!$category->is_active) {
-                return response()->json([
-                    'message' => 'Kategori pengeluaran tidak aktif.',
-                ], 422);
-            }
+        if (empty($validated)) {
+            return response()->json([
+                'message' => 'Tidak ada perubahan pengeluaran yang dikirim.',
+            ], 422);
         }
 
-        $expense->update($validated);
+        $expense = DB::transaction(function () use (
+            $validated,
+            $request,
+            $id
+        ) {
+            $expense = Expense::query()
+                ->lockForUpdate()
+                ->findOrFail($id);
+
+            if (isset($validated['expense_category_id'])) {
+                $category = ExpenseCategory::query()
+                    ->lockForUpdate()
+                    ->findOrFail(
+                        $validated['expense_category_id']
+                    );
+
+                if (!$category->is_active) {
+                    throw ValidationException::withMessages([
+                        'expense_category_id' => [
+                            'Kategori pengeluaran tidak aktif.',
+                        ],
+                    ]);
+                }
+            }
+
+            $before = $this->expenseSnapshot($expense);
+
+            $expense->update($validated);
+
+            $expense->refresh();
+
+            $after = $this->expenseSnapshot($expense);
+
+            $this->writeAuditLog(
+                $request,
+                'UPDATE_EXPENSE',
+                $expense,
+                [
+                    'before' => $before,
+                    'after' => $after,
+                ]
+            );
+
+            return $expense;
+        });
 
         return response()->json([
             'message' => 'Pengeluaran berhasil diperbarui.',
-            'data' => $expense->fresh()->load(['category', 'user']),
+            'data' => $expense->load(['category', 'user']),
         ]);
     }
 
-    public function destroy(string $id): JsonResponse
-    {
-        $expense = Expense::findOrFail($id);
+    /**
+     * Menghapus pengeluaran.
+     */
+    public function destroy(
+        Request $request,
+        string $id
+    ): JsonResponse {
+        DB::transaction(function () use ($request, $id) {
+            $expense = Expense::query()
+                ->lockForUpdate()
+                ->findOrFail($id);
 
-        $expense->delete();
+            $before = $this->expenseSnapshot($expense);
+
+            $this->writeAuditLog(
+                $request,
+                'DELETE_EXPENSE',
+                $expense,
+                [
+                    'before' => $before,
+                ]
+            );
+
+            $expense->delete();
+        });
 
         return response()->json([
             'message' => 'Pengeluaran berhasil dihapus.',
+        ]);
+    }
+
+    /**
+     * Membuat snapshot data pengeluaran untuk audit log.
+     */
+    private function expenseSnapshot(Expense $expense): array
+    {
+        return [
+            'id' => $expense->id,
+            'expense_category_id' => $expense->expense_category_id,
+            'user_id' => $expense->user_id,
+            'description' => $expense->description,
+            'amount' => (int) $expense->amount,
+            'expense_date' => $expense->expense_date->toDateString(),
+            'notes' => $expense->notes,
+        ];
+    }
+
+    /**
+     * Mencatat aktivitas pengeluaran.
+     */
+    private function writeAuditLog(
+        Request $request,
+        string $action,
+        Expense $expense,
+        array $metadata = []
+    ): void {
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => $action,
+            'entity_type' => 'EXPENSE',
+            'entity_id' => $expense->id,
+            'metadata' => $metadata,
+            'created_at' => now(),
         ]);
     }
 }
