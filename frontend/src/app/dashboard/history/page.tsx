@@ -979,7 +979,7 @@ function closeDetail() {
                     )}
 
                     {selectedTransaction.order_status === "NEW" &&
-                    selectedTransaction.payment_status !== "PAID" && (
+                    selectedTransaction.payment_status === "UNPAID" && (
                         <button
                         type="button"
                         disabled={orderStatusLoading}
