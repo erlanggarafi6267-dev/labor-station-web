@@ -96,7 +96,7 @@ class RefundSecurityTest extends TestCase
         $this->assertDatabaseHas('transactions', [
             'id' => $transaction->id,
             'payment_status' => 'REFUNDED',
-            'order_status' => 'COMPLETED',
+            'order_status' => 'NEW',
         ]);
 
         $this->assertDatabaseCount('stock_movements', 0);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,15 +23,50 @@ class RefundController extends Controller
 
         if (mb_strlen($reason) < 3) {
             throw ValidationException::withMessages([
-                'reason' => ['Alasan refund minimal 3 karakter setelah spasi dihapus.'],
+                'reason' => [
+                    'Alasan refund minimal 3 karakter setelah spasi dihapus.',
+                ],
             ]);
         }
 
-        $refund = DB::transaction(function () use ($request, $id, $reason) {
+        $actorId = (int) $request->user()->id;
+
+        $refund = DB::transaction(function () use (
+            $actorId,
+            $id,
+            $reason
+        ) {
+            /*
+             * Lock actor terlebih dahulu.
+             * Pengaturan permission juga mengunci row user target.
+             */
+            $actor = User::query()
+                ->with('role')
+                ->lockForUpdate()
+                ->findOrFail($actorId);
+
+            /*
+             * Recheck permission di dalam transaksi.
+             * Jangan hanya mengandalkan pemeriksaan middleware.
+             */
+            if (!$actor->hasPermission('transaction.refund')) {
+                abort(403, 'Kamu tidak memiliki izin untuk memproses refund.');
+            }
+
+            /*
+             * Lock transaksi setelah actor.
+             * PaymentController menggunakan urutan yang sama.
+             */
             $transaction = Transaction::query()
-                ->with('payment')
                 ->lockForUpdate()
                 ->findOrFail($id);
+
+            /*
+             * Payment tidak boleh berubah selama transaksi refund
+             * karena row transaksi sudah dikunci dan semua jalur
+             * pembayaran harus mengunci row transaksi yang sama.
+             */
+            $payment = $transaction->payment()->first();
 
             if ($transaction->sales_channel !== 'OFFLINE') {
                 throw ValidationException::withMessages([
@@ -48,7 +84,7 @@ class RefundController extends Controller
                 ]);
             }
 
-            if (!$transaction->payment) {
+            if (!$payment) {
                 throw ValidationException::withMessages([
                     'payment' => [
                         'Catatan pembayaran asli tidak ditemukan.',
@@ -56,7 +92,7 @@ class RefundController extends Controller
                 ]);
             }
 
-            $amount = (int) $transaction->payment->amount;
+            $amount = (int) $payment->amount;
 
             if ($amount <= 0 || $amount !== (int) $transaction->total) {
                 throw ValidationException::withMessages([
@@ -75,7 +111,7 @@ class RefundController extends Controller
             }
 
             $refund = $transaction->refund()->create([
-                'processed_by' => $request->user()->id,
+                'processed_by' => $actor->id,
                 'amount' => $amount,
                 'method' => 'CASH',
                 'reason' => $reason,
@@ -87,7 +123,7 @@ class RefundController extends Controller
             ]);
 
             AuditLog::create([
-                'user_id' => $request->user()->id,
+                'user_id' => $actor->id,
                 'action' => 'TRANSACTION_REFUNDED',
                 'entity_type' => 'TRANSACTION',
                 'entity_id' => $transaction->id,
@@ -97,7 +133,7 @@ class RefundController extends Controller
                     'amount' => $amount,
                     'method' => 'CASH',
                     'reason' => $refund->reason,
-                    'original_payment_method' => $transaction->payment->method,
+                    'original_payment_method' => $payment->method,
                     'stock_restored' => false,
                 ],
                 'created_at' => now(),
